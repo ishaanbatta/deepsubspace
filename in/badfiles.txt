@@ -1,0 +1,4 @@
+/data/users2/ibatta/data/features/fmrimeasures/ADNI/nii/007_S_4272/Axial_MB_rsfMRI__Eyes_Open_/2018-01-16_12_30_46.0/S650646/rest/swarest1_ALFF.nii
+/data/users2/ibatta/data/features/fmrimeasures/ADNI/nii/007_S_4272/Axial_MB_rsfMRI__Eyes_Open_/2018-01-16_12_30_46.0/S650646/rest/swarest1_fALFF.nii
+/data/users2/ibatta/data/features/fmrimeasures/ADNI/nii/007_S_4272/Axial_MB_rsfMRI__Eyes_Open_/2018-01-16_12_30_46.0/S650646/rest/swarest1_KccReHo.nii
+/data/users2/ibatta/data/features/fmrimeasures/ADNI/nii/007_S_4272/Axial_MB_rsfMRI__Eyes_Open_/2018-01-16_12_30_46.0/S650646/rest/swarest1_VMHC.nii

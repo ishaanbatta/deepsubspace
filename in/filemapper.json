@@ -1,0 +1,43 @@
+{
+"basedir":{
+    "ADNI":{
+	    "lowres_smriPath":"/data/users2/ibatta/data/features/lowresSMRI/ADNI/nii/",
+        "highres_smriPath":"/data/qneuromark/Data/ADNI/Updated/T1/ADNI/",
+        "lowres_fmriPath":"/data/users2/ibatta/data/features/fmrimeasures/ADNI/nii/"
+    }
+}, 
+"filename":{
+    "ADNI":{
+        "tsavg":"swarest1_tsavg.nii",
+        "tsmax":"swarest1_tsmax.nii",
+        "tsmedian":"swarest1_tsmedian.nii",
+        "tsmin":"swarest1_tsmin.nii",
+        "ALFF":"swarest1_ALFF.nii",
+        "DCb":"swarest1_DegreeCentrality_DegreeCentrality_PositiveBinarizedSumBrain.nii",
+        "DCw":"swarest1_DegreeCentrality_DegreeCentrality_PositiveWeightedSumBrain.nii",
+        "fALFF":"swarest1_fALFF.nii",
+        "KccReHo":"swarest1_KccReHo.nii",
+        "PerAF":"swarest1_PerAF.nii",
+        "VMHC":"swarest1_VMHC.nii",
+        "lT1":"smwc1T1.nii.gz",
+        "hT1":"smwc1T1.nii"
+    }
+},
+"basepathmapper":{
+    "ADNI":{
+        "tsavg":"lowres_fmriPath",
+        "tsmax":"lowres_fmriPath",
+        "tsmedian":"lowres_fmriPath",
+        "tsmin":"lowres_fmriPath",
+        "ALFF":"lowres_fmriPath",
+        "DCw":"lowres_fmriPath",
+        "DCb":"lowres_fmriPath",
+        "fALFF":"lowres_fmriPath",
+        "KccReHo":"lowres_fmriPath",
+        "PerAF":"lowres_fmriPath",
+        "VMHC":"lowres_fmriPath",
+        "lT1":"lowres_smriPath",
+        "hT1":"highres_smriPath"
+    }
+}
+}
