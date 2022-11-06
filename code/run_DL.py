@@ -72,14 +72,20 @@ if __name__ == '__main__':
     if 'SLURM_ARRAY_TASK_ID' in os.environ:
         iter = int(os.environ['SLURM_ARRAY_TASK_ID'])
     else:
-        iter = 0
+        iter = 10
 
     cfg = ut.Config(iter=iter, tr_smp_sizes=args.tr_smp_sizes, nReps=args.nReps, nc=args.nc, bs=args.bs, lr=args.lr, es=args.es, pp=args.pp,
                     es_va=args.es_va, es_pat=args.es_pat, ml=args.ml, mt=args.mt, ssd=args.ssd, sm=args.sm, fkey=args.fkey, scorename=args.scorename, cuda_avl=cuda_avl, nw=args.nw, cr=args.cr, tss=args.tss, rep=args.rep)
 
     # Update iteration (multitask training is controlled by pp flag) and model location
     cfg = ut.updateIterML(cfg)
-
+    ut.saveCfg(cfg)
+    
+    
+        
+    # ut.test_saliency(cfg)
+    # sys.exit(0)
+    
     # if (cfg.mt in ['AN3Ddr_lrMxG','AN3Ddr_lrMxLtG']) and (',' not in cfg.fkey):
     #     print('Skipping Computation due to Single Channel Multigroup Model!! ')
     #     sys.exit(0)
@@ -96,5 +102,11 @@ if __name__ == '__main__':
         # train with hyperparameter tuning 
         best_result = ut.tune_hyperparams(cfg)
         
+        import pdb; pdb.set_trace()
+        
+        # Update iteration (multitask training is controlled by pp flag) and model location
+        best_result = ut.updateIterML(best_result)
+        ut.saveCfg(best_result)
+            
         # test on the best model obtained
         ut.evaluate_test_accuracy(best_result)

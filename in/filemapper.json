@@ -39,5 +39,13 @@
         "lT1":"lowres_smriPath",
         "hT1":"highres_smriPath"
     }
+},
+"maskbasepath":"/data/users2/ibatta/data/masks/",
+"maskmapper":{
+    "ADNI":{
+        "lowres_fmriPath":"ADNI_T1_lowres.nii.gz",
+        "lowres_smriPath":"ADNI_T1_lowres.nii.gz",
+        "highres_smriPath":"ADNI_18334_mask_T1_highres.nii"
+    }
 }
 }

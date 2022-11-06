@@ -1,12 +1,11 @@
 #!/bin/bash
 #SBATCH -N 1 
 #SBATCH -n 1
-#SBATCH -p qTRDGPUH
-#SBATCH --gres=gpu:1
-#SBATCH -c 4
-#SBATCH --mem-per-cpu=8000
+#SBATCH -p qTRD
+#SBATCH -c 2
+#SBATCH --mem-per-cpu=8g
 #SBATCH -t 1440
-#SBATCH -J DL
+#SBATCH -J Summ
 #SBATCH -e ../out/slogs/%x-%A-%a.err
 #SBATCH -o ../out/slogs/%x-%A-%a.out
 #SBATCH -A trends53c17
@@ -14,7 +13,7 @@
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=ibatta@gsu.edu
 
-SCR=$1
+CL=$1
 
 sleep 3s
 
@@ -33,7 +32,7 @@ sleep 1s
 
 # ./monitor_GPU.sh & 
 
-./$SCR.sh
+python summarize.py $CL random
 
 sleep 3s
 

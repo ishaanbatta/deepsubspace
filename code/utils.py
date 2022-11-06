@@ -1,4 +1,6 @@
 import os, json, sys
+import pickle
+import dataclasses
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,9 +16,9 @@ from models import AlexNet3D_Dropout, AN3Ddr_highresMax, AN3Ddr_lowresAvg, AN3Dd
 from sklearn.metrics import mean_absolute_error, explained_variance_score, mean_squared_error, r2_score
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score, jaccard_score, roc_auc_score, average_precision_score, brier_score_loss, log_loss, confusion_matrix
 from dataclasses import dataclass
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, zscore
 from scipy.ndimage import gaussian_filter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 
 from ray import air, tune
 from ray.tune.schedulers import ASHAScheduler
@@ -37,17 +39,17 @@ class Config:
     pp: int = 1
     es_va: int = 1
     es_pat: int = 40
-    # fl: str = '../in/filelist.csv' # master file with list of paths to input scans for all subjects (should have header ideally for supporting multimodal)
+    # fl: str = '/data/users2/ibatta/projects/deepsubspace/in/filelist.csv' # master file with list of paths to input scans for all subjects (should have header ideally for supporting multimodal)
     ds: str = 'ADNI' #Name of the dataset being used.
-    ml: str = '../out/modelout/'
+    ml: str = '/data/users2/ibatta/projects/deepsubspace/out/modelout/'
     mt: str = 'AlexNet3D_Dropout_'
     ssd: str = '../../SampleSplits/'
-    sm: str = '../in/analysis_score.csv' # master file for scores, labels and relative filepaths for all subjects
+    sm: str = '/data/users2/ibatta/projects/deepsubspace/in/analysis_score.csv' # master file for scores, labels and relative filepaths for all subjects
     fkey: str = 'smriPath' # Name of filepath key(s) to be used for the set of features being used. Must be a comma separated string listing the features, if a multimodal architecture is used.
     nch: int = 1 # Number of input channles (modalities)
     ngr: int = 1 # Number of input groups (modalities/subspaces)
-    fmpfile: str = '../in/filemapper.json' # filemapper path: json file with mapping of fkey variables to relevant filepaths and filenames for data loading.
-    fm: dict = field(default_factory=lambda: json.load(open('../in/filemapper.json','r')))
+    fmpfile: str = '/data/users2/ibatta/projects/deepsubspace/in/filemapper.json' # filemapper path: json file with mapping of fkey variables to relevant filepaths and filenames for data loading.
+    fm: dict = field(default_factory=lambda: json.load(open('/data/users2/ibatta/projects/deepsubspace/in/filemapper.json','r')))
     scorename: str = 'labels'
     cuda_avl: bool = True
     nw: int = 8
@@ -149,7 +151,7 @@ def read_X_y_5D_idx(df, fkey, idx, scorename, cr, fm, ds, replace_nan=True):
         filename = fm['filename'][ds][curkey]
         basedir = fm['basedir'][ds][basekey]
         fN = basedir+relpath+filename
-        print(fN)
+        # print(fN)
 
         # Read image
         X = np.float32(nib.load(fN).get_fdata())
@@ -426,6 +428,7 @@ def generate_validation_model(cfg):
                 (net.state_dict(), optimizer.state_dict()), cfg.ml+"checkpoint.pt")
             checkpoint = Checkpoint.from_directory(cfg.ml)
             session.report({"loss": valid_acc}, checkpoint=checkpoint)
+            # session.report({"loss": valid_acc})
     print("Finished Training")
         
         
@@ -482,7 +485,17 @@ def evaluate_test_accuracy(cfg):
     # import pdb; pdb.set_trace()
     # Write Log
     outs.to_csv(cfg.ml+'test.csv', index=False)
+    saveCfg(cfg,fname='config_test.pkl')
+    
 
+def saveCfg(cfg, fname='config.pkl'):
+    with open(cfg.ml+fname, 'wb') as f:
+        pickle.dump(cfg, f)
+
+def loadCfg(fpath):
+    with open(fpath,'rb') as f:
+        cfg_dict = dataclasses.asdict(pickle.load(f))
+    return Config(** cfg_dict)
 
 def loadData(cfg, mode):
 
@@ -513,17 +526,23 @@ def updateIterML(cfg):
     print('Updating Iter ML.. ')
     # Update Iter (in case of multitask training)
     
-    if cfg.pp!=None and cfg.pp:
-        cfg.iter += 1
+    # if cfg.pp!=None and cfg.pp:
+    #     cfg.iter += 1
 
     # Map slurmTaskID to training sample size (tss) and CV rep (rep)
     cfg = slurmTaskIDMapper(cfg)
 
     # Update Model Location
-    cfg.ml = cfg.ml+'mt_'+cfg.mt+'_fkey_'+cfg.fkey+'_scorename_'+cfg.scorename+'_iter_' + \
+    ml_suffix = 'mt_'+cfg.mt+'_fkey_'+cfg.fkey+'_scorename_'+cfg.scorename+'_iter_' + \
         str(cfg.iter)+'_nc_'+str(cfg.nc)+'_rep_'+str(cfg.rep)+'_bs_'+str(cfg.bs)+'_lr_' + \
         str(cfg.lr)+'_espat_'+str(cfg.es_pat)+'/'
-
+    if np.all(['mt_' in cfg.ml, 'fkey_' in cfg.ml, '_scorename_' in cfg.ml, '_espat_' in cfg.ml]):
+        # Only change suffix
+        cfg.ml = '/'.join(cfg.ml.split('/')[:-2]) + '/' + ml_suffix
+    else:
+        # Only append the suffix
+        cfg.ml = cfg.ml + ml_suffix
+        
     # if len(cfg.fkey) > 1000:
     #     print('filename long!!!!! Replacing with xyz')
     #     cfg.ml = cfg.ml.replace(cfg.fkey,'xyz')
@@ -607,7 +626,13 @@ def load_net_weights2(net, weights_filename):
 
 
 
-def temp_valid_func(cfg):
+def temp_valid_func(hyper_params,cfg):
+    
+    cfg_dict = asdict(cfg)
+    if type(hyper_params) == dict:
+        for key, value in hyper_params.items():
+            cfg_dict[key] = value
+    cfg = Config(**cfg_dict)
     cfg = updateIterML(cfg)
     generate_validation_model(cfg)
     return
@@ -631,7 +656,7 @@ def tune_hyperparams(cfg, num_samples=10):
     
     tuner = tune.Tuner(
         tune.with_resources(
-            tune.with_parameters(temp_valid_func),
+            tune.with_parameters(lambda x: temp_valid_func(x, cfg)),
             resources={"cpu": 2, "gpu": 1}
         ),
         tune_config=tune.TuneConfig(
@@ -641,6 +666,7 @@ def tune_hyperparams(cfg, num_samples=10):
             num_samples=num_samples,
         ),
         param_space=search_space,
+        run_config=air.RunConfig(local_dir='../out/raytune/',name=cfg.ml.split('/')[-2])
     )
     
     results = tuner.fit()
@@ -653,22 +679,57 @@ def tune_hyperparams(cfg, num_samples=10):
     return best_result
 
 
+def loadMasks(cfg, nibObjectsOnly=False):
+    masks = []
+    fkeys = cfg.fkey.split(',')
+    for curkey in fkeys:
+        basekey = cfg.fm['basepathmapper'][cfg.ds][curkey]
+        maskpath = cfg.fm['maskbasepath'] + cfg.ds +'/' + cfg.fm['maskmapper'][cfg.ds][basekey]
+        if not nibObjectsOnly:
+            curmask = np.float32(nib.load(maskpath).get_fdata())
+            curmask = np.reshape(curmask, (curmask.shape[0],curmask.shape[1],curmask.shape[2]))
+        else:
+            curmask = nib.load(maskpath)
+        masks.append(curmask)
+    if not nibObjectsOnly:
+        masks = np.array(masks)
+    return masks
+        
+
+
+
+def normalize_image(X, method='zscore', axis=None):
+    if method == 'zscore':
+        return zscore(X, axis=axis)
+    elif method == 'minmax':
+        return minmax(X)
+    elif method == None:
+        return X
 
 def minmax(X):
     return ((X-X.min())/(X.max()-X.min()))
 
-def minmax_4D(im4D):
-    # 4D minmax (assumes final dimension is subject)
+
+def normalize_4D(im4D, method='zscore'):
+    # 4D normalization (assumes final dimension is subject)
     mim = []
     for i in np.arange(im4D.shape[3]):
         im = im4D[..., i]
-        im = minmax(im)
+        im = normalize_image(im, method=method)
         mim.append(im)
     mim = np.array(mim)
     return mim
 
+def normalize_5D(im5D, method='zscore'):
+    
+    mim = np.zeros(im5D.shape)
+    for i in range(im5D.shape[0]):
+        for j in range(im5D.shape[1]):
+            mim[i,j,:,:,:] = normalize_image(im5D[i,j,:,:,:], method=method)
+    return mim
 
-def fil_im(smap):
+
+def fil_im(smap, normalize_method='zscore'):
     # smap : 5D: nSubs x nCh(1) x X x Y x Z
     s = 2  # sigma gaussian filter
     w = 9  # kernal size gaussian filter
@@ -677,13 +738,30 @@ def fil_im(smap):
     fsmap = []
     for i in np.arange(smap.shape[0]):
         im = smap[i]
-        im = minmax(im)
+        im = normalize_image(im, method=normalize_method)
         im = gaussian_filter(im, sigma=s, truncate=t)
-        im = minmax(im)
+        im = normalize_image(im, method=normalize_method)
         fsmap.append(im)
     fsmap = np.array(fsmap)
     return fsmap
-    
+
+
+def fil_im_5d(smap, normalize_method='zscore'):
+    # smap : 5D: nSubs x nCh(1) x X x Y x Z
+    s = 2  # sigma gaussian filter
+    w = 9  # kernal size gaussian filter
+    # truncate gaussian filter at "t#" standard deviations
+    t = (((w - 1)/2)-0.5)/s
+    fsmap = np.zeros(smap.shape)
+    for i in np.arange(smap.shape[0]):
+        for j in np.arange(smap.shape[1]):
+            im = smap[i,j,:,:,:]
+            im = normalize_image(im, method=normalize_method)
+            im = gaussian_filter(im, sigma=s, truncate=t)
+            im = normalize_image(im, method=normalize_method)
+            fsmap[i,j,:,:,:] = im
+    return fsmap
+
 
 def area_occlusion(model, image_tensor, area_masks, target_class=None, occlusion_value=0, apply_softmax=True, cuda=False, verbose=False, taskmode='clx'):
     
@@ -738,40 +816,120 @@ def area_occlusion(model, image_tensor, area_masks, target_class=None, occlusion
 
 
 
-def run_saliency(odir, itrpm, images, net, area_masks, scorename, taskM):
-    for nSub in np.arange(images.shape[0]):
+def test_saliency(cfg):
+    print('Testing saliency..')
+    cuda_avl = cfg.cuda_avl
+    
+    net = loadNet(cfg)
+    
+    
+    
+    if cfg.cuda_avl:
+        net.load_state_dict(torch.load(cfg.ml+'model_state_dict.pt'))
+        net.cuda()
+        net = torch.nn.DataParallel(
+            net, device_ids=range(torch.cuda.device_count()))
+        cudnn.benchmark = True
+    else:
+        net.load_state_dict(torch.load(cfg.ml+'model_state_dict.pt', map_location=torch.device('cpu')))
+
+    net.eval()
+    
+    sal , fsal, imsal, fimsal = [],[],[],[]
+    dataloader = loadData(cfg, 'te')
+    # Iterate over dataloader batches
+    test_labels = []
+    for _, data in enumerate(dataloader, 0):
+        print('Running new batch..')
+        inputs, labels = data
+        test_labels.append(np.squeeze(labels))
+        
+        # # Wrap in variable and load batch to gpu
+        # if cuda_avl:
+        #     inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
+        # else:
+        #     inputs, labels = Variable(inputs), Variable(labels)
+
+        # tempmask = np.ones(inputs.shape[2:])
+        masks = loadMasks(cfg)
+        sal_out = run_saliency(cfg.ml, 'BPraw', inputs, net, masks, cfg.scorename, cfg.cr, cuda_avl=cuda_avl)
+        sal.append(sal_out[0])
+        fsal.append(sal_out[1])
+        imsal.append(sal_out[2])
+        fimsal.append(sal_out[3])
+        
+    test_labels = np.hstack(test_labels).squeeze()
+    np.savetxt(cfg.ml+'test_labels.txt', test_labels, fmt='%d')
+    
+    print('Saving saliency results to: \n'+cfg.ml)
+    sal = np.vstack(sal)
+    with open(cfg.ml+'sal_zscore.pkl','wb') as f:
+        pickle.dump(sal,f)
+
+    fsal = np.vstack(fsal)
+    with open(cfg.ml+'fsal_zscore.pkl','wb') as f:
+        pickle.dump(fsal,f)
+
+    imsal = np.vstack(imsal)
+    with open(cfg.ml+'imsal_zscore.pkl','wb') as f:
+        pickle.dump(imsal,f)
+
+    fimsal = np.vstack(fimsal)
+    with open(cfg.ml+'fimsal_zscore.pkl','wb') as f:
+        pickle.dump(fimsal,f)
+
+    
+    
+    
+
+
+
+def run_saliency(odir, itrpm, images, net, area_masks, scorename, taskM, cuda_avl=True):
+    nsubs, nch, nx, ny, nz = images.shape
+    sal_measures = ['saliency', 'filtered_saliency', 'imtimes_saliency', 'filtered_imtimes_saliency']
+    sal_out = np.array([np.zeros(images.shape) for m in sal_measures])
+    for nSub in range(nsubs):
         print(nSub)
-        fname = odir + itrpm + '_' + scorename  + '_nSub_' + str(nSub) + '.nii' 
-        if itrpm == 'AO':
-            interpretation_method = area_occlusion
-            sal_im = interpretation_method(net, images[nSub], area_masks, occlusion_value=0, apply_softmax=False, cuda=True, verbose=False,taskmode=taskM)
-        elif itrpm == 'BP':
-            interpretation_method = sensitivity_analysis
-            im = images[nSub].reshape(1,1,121,145,121)
-            print(im.shape)
-            sal_im = interpretation_method(net, im, area_masks,None,cuda=True, verbose=False, taskmode=taskM)
-        else:
-            print('Verify interpretation method')   
-        nib.save(nib.Nifti1Image(sal_im.squeeze() , np.eye(4)), fname)
- 
-def sensitivity_analysis(model, im, mask, target_class=None, cuda=True, verbose=False, taskmode='clx'):
-   
+        for chi in range(nch): 
+            fname = odir + itrpm + '_' + scorename  + '_nSub_' + str(nSub) + '.nii' 
+            if itrpm == 'AO':
+                interpretation_method = area_occlusion
+                sal_map = interpretation_method(net, images[nSub], area_masks, occlusion_value=0, apply_softmax=False, cuda=True, verbose=False,taskmode=taskM)
+            elif itrpm == 'BPraw':
+                interpretation_method = sensitivity_raw
+                # im = images[nSub].reshape(1,1,121,145,121)
+                # im = images[nSub,chi,:,:,:].reshape(1,1,images.shape[2],images.shape[3],images.shape[4])
+                
+                for mi in range(len(sal_measures)):
+                    sal_out[mi] = interpretation_method(net, images, area_masks, sal_measures[mi], None,cuda=cuda_avl, verbose=False, taskmode=taskM)
+                
+            elif itrpm == 'BP':
+                interpretation_method = sensitivity_analysis
+                # im = images[nSub].reshape(1,1,121,145,121)
+                im = images[nSub,chi,:,:,:].reshape(1,1,images.shape[2],images.shape[3],images.shape[4])
+                
+                cur_sal_outs = interpretation_method(net, im, area_masks[chi,:,:,:],None,cuda=cuda_avl, verbose=False, taskmode=taskM)
+                for mi in range(len(sal_measures)):
+                    sal_out[mi,nSub,chi,:,:,:] = cur_sal_outs[mi]
+            else:
+                print('Verify interpretation method')   
+            
+        
+            # nib.save(nib.Nifti1Image(sal_map.squeeze() , np.eye(4)), fname)
+    return sal_out
+
+def sensitivity_raw(model, im, mask,gradmode, target_class=None, cuda=True, verbose=False, taskmode='clx'):
     # model: pytorch model set to eval()
-    # im: 5D image - nSubs x 1 x X x Y x Z
-    # mask: group input data mask
+    # im: 5D image - nSubs x numChannels x X x Y x Z
+    # mask: group input data mask - numChannles x X x Y x Z
+    # gradmode: 'saliency', 'filtered_saliency', 'imtimes_saliency', 'filtered_imtimes_saliency'
  
     # sal_map: gradient [4D image: X X Y X Z X nSubs]
-    # fil_sal_map: filtered gradient [4D image: X X Y X Z X nSubs]
-    # grad_times_im_sal_map: gradient x input [4D image: X X Y X Z X nSubs]
-    # fil_grad_times_im_sal_map: filtered (gradient x input) [4D image: X X Y X Z X nSubs]
- 
-      
-    im = torch.Tensor(im)
-       
-        
- 
+    
     if cuda:
-        im = im.cuda()
+        im = torch.Tensor(im).cuda()
+    else:
+        im = torch.Tensor(im)
  
     im = Variable(im, requires_grad=True)
  
@@ -809,12 +967,90 @@ def sensitivity_analysis(model, im, mask, target_class=None, cuda=True, verbose=
     output.backward(gradient=one_hot_output)
  
     # Gradient
-    sal_map = im.grad.cpu().numpy().squeeze()
+    
+    # sal_map = np.squeeze(im.grad.cpu().numpy(), axis=1) # Removes the channel axis
+    # sal_map = im.grad.cpu().numpy().squeeze(axis=0) # Remove the subject axis
+    sal_map = im.grad.cpu().numpy() # Remove the subject axis
+    
+    if 'imtimes' in gradmode:
+        sal_map = sal_map * im.cpu().detach().numpy()
+        
+    if 'filtered' in gradmode:
+        sal_map = fil_im_5d(sal_map, normalize_method='zscore')
+    else:
+        # only normalize withouxt filtering
+        sal_map = normalize_5D(sal_map, method='zscore')
+    
+    # Mask Gradient
+    # mask = np.tile(mask[None], (im.shape[0], 1, 1, 1))
+    sal_map *= mask
+    
+    
+    return sal_map
+
+ 
+def sensitivity_analysis(model, im, mask, target_class=None, cuda=True, verbose=False, taskmode='clx'):
+   
+    # model: pytorch model set to eval()
+    # im: 5D image - nSubs x numChannels x X x Y x Z
+    # mask: group input data mask - numChannles x X x Y x Z
+ 
+    # sal_map: gradient [4D image: X X Y X Z X nSubs]
+    # fil_sal_map: filtered gradient [4D image: X X Y X Z X nSubs]
+    # grad_times_im_sal_map: gradient x input [4D image: X X Y X Z X nSubs]
+    # fil_grad_times_im_sal_map: filtered (gradient x input) [4D image: X X Y X Z X nSubs]
+     
+ 
+    if cuda:
+        im = torch.Tensor(im).cuda()
+    else:
+        im = torch.Tensor(im)
+ 
+    im = Variable(im, requires_grad=True)
+ 
+    # Forward Pass
+    output = model(im)[0]
+ 
+    # Predicted labels
+    if taskmode == 'clx':
+        output = F.softmax(output, dim=1)
+        #print(output, output.shape)
+ 
+    # Backward pass.
+    model.zero_grad()
+ 
+    output_class = output.cpu().max(1)[1].numpy()
+    output_class_prob = output.cpu().max(1)[0].detach().numpy()
+ 
+    if verbose:
+        print('Image was classified as', output_class,
+              'with probability', output_class_prob)
+ 
+    # one hot encoding
+    one_hot_output = torch.zeros(output.size())
+ 
+    for i in np.arange(output.size()[0]):
+        if target_class is None:
+            one_hot_output[i][output_class[i]] = 1
+        else:
+            one_hot_output[i][target_class[i]] = 1
+ 
+    if cuda:
+        one_hot_output = one_hot_output.cuda()
+ 
+    # Backward pass
+    output.backward(gradient=one_hot_output)
+ 
+    # Gradient
+    # sal_map = np.squeeze(im.grad.cpu().numpy(), axis=1) # Removes the channel axis
+    sal_map = im.grad.cpu().numpy().squeeze(axis=0) # Remove the subject axis
    
     print(sal_map.shape)
  
+    
+    
     # Gradient X Image
-    grad_times_im_sal_map = sal_map * im.cpu().squeeze().detach().numpy()
+    grad_times_im_sal_map = sal_map * im.cpu().detach().numpy()
     grad_times_im_sal_map = np.moveaxis(grad_times_im_sal_map, 0, -1)
    
     print(grad_times_im_sal_map.shape)
@@ -835,9 +1071,9 @@ def sensitivity_analysis(model, im, mask, target_class=None, cuda=True, verbose=
     fil_sal_map = np.moveaxis(fil_sal_map, 0, -1)
  
     # Scale non-filtered
-    sal_map = np.moveaxis(minmax_4D(sal_map), 0, -1)
+    sal_map = np.moveaxis(normalize_4D(sal_map), 0, -1)
     grad_times_im_sal_map = np.moveaxis(
-        minmax_4D(grad_times_im_sal_map), 0, -1)
+        normalize_4D(grad_times_im_sal_map), 0, -1)
  
     return sal_map, fil_sal_map, grad_times_im_sal_map, fil_grad_times_im_sal_map
  
