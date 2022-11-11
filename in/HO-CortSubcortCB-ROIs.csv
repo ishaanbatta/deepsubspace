@@ -1,0 +1,77 @@
+index,x,y,z,name,shortname
+0,48,94,35,Frontal Pole,FP
+1,25,70,32,Insular Cortex,Ins
+2,33,73,63,Superior Frontal Gyrus,SFG
+3,25,72,55,Middle Frontal Gyrus,MFG
+4,20,77,40,Inferior Frontal Gyrus pars triangularis,IFGpt
+5,20,71,47,Inferior Frontal Gyrus pars opercularis,IFGpo
+6,44,51,68,Precentral Gyrus,PreCG
+7,61,69,17,Temporal Pole,TP
+8,73,59,32,Superior Temporal Gyrus anterior division,STGa
+9,75,52,35,Superior Temporal Gyrus posterior division,STGp
+10,74,59,26,Middle Temporal Gyrus anterior division,MTGa
+11,14,51,30,Middle Temporal Gyrus posterior division,MTGp
+12,72,35,38,Middle Temporal Gyrus temporooccipital part,MTGto
+13,22,61,16,Inferior Temporal Gyrus anterior division,ITGa
+14,70,42,26,Inferior Temporal Gyrus posterior division,ITGp
+15,70,35,29,Inferior Temporal Gyrus temporooccipital part,ITGto
+16,52,42,69,Postcentral Gyrus,PoCG
+17,28,39,63,Superior Parietal Lobule,SPL
+18,73,48,53,Supramarginal Gyrus anterior division,SpmGa
+19,72,39,51,Supramarginal Gyrus posterior division,SpmGa
+20,21,37,55,Angular Gyrus,AngG
+21,60,28,57,Lateral Occipital Cortex superior division,LOCs
+22,68,28,38,Lateral Occipital Cortex inferior division,LOCi
+23,47,23,40,Intracalcarine Cortex,iCalc
+24,45,84,27,Frontal Medial Cortex,FrMC
+25,45,63,63,Juxtapositional Lobule Cortex (formerly Supplementary Motor Cortex),SMC
+26,46,74,27,Subcallosal Cortex,SucColl
+27,45,80,52,Paracingulate Gyrus,ParaC
+28,45,61,57,Cingulate Gyrus anterior division,CingGa
+29,44,42,54,Cingulate Gyrus posterior division,CingGp
+30,45,31,55,Precuneous Cortex,PC
+31,45,23,49,Cuneal Cortex,Cun
+32,25,77,29,Frontal Orbital Cortex,FrOrb
+33,57,62,18,Parahippocampal Gyrus anterior division,PrHippGa
+34,58,45,28,Parahippocampal Gyrus posterior division,PrHippGp
+35,41,22,33,Lingual Gyrus,LingG
+36,62,61,15,Temporal Fusiform Cortex anterior division,TfusiA
+37,64,47,24,Temporal Fusiform Cortex posterior division,TfusiP
+38,62,37,29,Temporal Occipital Fusiform Cortex,TOfusi
+39,33,23,30,Occipital Fusiform Gyrus,Ofusi
+40,66,74,37,Frontal Operculum Cortex,FrOper
+41,19,61,40,Central Opercular Cortex,CeOper
+42,17,50,47,Parietal Operculum Cortex,ParOper
+43,20,60,36,Planum Polare,PlanPo
+44,67,52,39,Heschl's Gyrus (includes H1 and H2),Heschl
+45,74,53,40,Planum Temporale,PlanTe
+46,44,21,42,Supracalcarine Cortex,SupCalc
+47,37,15,34,Occipital Pole,OccPole
+48,57,40,41,Left Lateral Ventricle,LLatV
+49,51,51,39,Left Thalamus,LThal
+50,51,71,38,Left Caudate,LCaud
+51,56,67,34,Left Putamen,LPuta
+52,54,62,35,Left Pallidum,LPall
+53,44,49,18,Brain-Stem,LBrSt
+54,59,54,27,Left Hippocampus,LHipp
+55,57,61,27,Left Amygdala,LAmyg
+56,50,70,33,Left Accumbens,LNA
+57,35,45,44,Right Lateral Ventricle,RLatV
+58,38,51,39,Right Thalamus,RThal
+59,39,72,37,Right Caudate,RCaud
+60,34,68,34,Right Putamen,RPuta
+61,35,61,35,Right Pallidum,RPall
+62,31,57,25,Right Hippocampus,RHipp
+63,32,63,25,Right Amygdala,RAmyg
+64,40,69,32,Right Accumbens,RNA
+65,96,80,54,Cerebellum Left I-IV,CBl1-4
+66,83,80,55,Cerebellum Right I-IV,CBr1-4
+67,106,75,52,Cerebellum Left V-VI,CBl5-6
+68,77,71,55,Cerebellum Right V-VI,CBr5-6
+69,89,56,51,Cerebellum Vermis V-VI,CBv5-6
+70,132,61,39,Cerebellum Left Crus,CBlCr
+71,93,49,47,Cerebellum Vermis Crus,CBvCr
+72,48,60,40,Cerebellum Right Crus,CBrCr
+73,124,62,18,Cerebellum Left VII-X,CBl7-10
+74,88,58,42,Cerebellum Vermis VII-X,CBv7-10
+75,65,55,20,Cerebellum Right VII-X,CBr7-10
