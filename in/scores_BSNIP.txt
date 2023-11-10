@@ -1,0 +1,4 @@
+PANSSTotal
+PANSSPosTotal
+PANSSNegTotal
+PANSSGenTotal

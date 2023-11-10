@@ -1,0 +1,6 @@
+sal_gmr_fwhm20
+sal_gmr_fwhm12
+sal_gmr_fwhm5
+sal_gmr_absol_fwhm20
+sal_gmr_absol_fwhm12
+sal_gmr_absol_fwhm5

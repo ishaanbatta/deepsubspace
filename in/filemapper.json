@@ -4,6 +4,11 @@
 	    "lowres_smriPath":"/data/users2/ibatta/data/features/lowresSMRI/ADNI/nii/",
         "highres_smriPath":"/data/qneuromark/Data/ADNI/Updated/T1/ADNI/",
         "lowres_fmriPath":"/data/users2/ibatta/data/features/fmrimeasures/ADNI/nii/"
+    },
+    "BSNIP":{
+	    "lowres_smriPath":"/data/users2/ibatta/data/features/lowresSMRI/BSNIP/nii/",
+        "highres_smriPath":"/data/qneuromark/Data/BSNIP/ZN_Neuromark/ZN_Prep_sMRI/",
+        "lowres_fmriPath":"/data/users2/ibatta/data/features/fmrimeasures/BSNIP/nii/"
     }
 }, 
 "filename":{
@@ -20,7 +25,24 @@
         "PerAF":"swarest1_PerAF.nii",
         "VMHC":"swarest1_VMHC.nii",
         "lT1":"smwc1T1.nii.gz",
-        "hT1":"smwc1T1.nii"
+        "hT1":"smwc1T1.nii",
+        "fMVP":"swarest1_mvp.nii"
+    },
+    "BSNIP":{
+        "tsavg":"SM_tsavg.nii",
+        "tsmax":"SM_tsmax.nii",
+        "tsmedian":"SM_tsmedian.nii",
+        "tsmin":"SM_tsmin.nii",
+        "ALFF":"SM_ALFF.nii",
+        "DCb":"SM_DegreeCentrality_DegreeCentrality_PositiveBinarizedSumBrain.nii",
+        "DCw":"SM_DegreeCentrality_DegreeCentrality_PositiveWeightedSumBrain.nii",
+        "fALFF":"SM_fALFF.nii",
+        "KccReHo":"SM_KccReHo.nii",
+        "PerAF":"SM_PerAF.nii",
+        "VMHC":"SM_VMHC.nii",
+        "lT1":"smwc1T1.nii.gz",
+        "hT1":"VBM_modulated_SPM12_SM6.nii",
+        "fMVP":"SM_mvp.nii"
     }
 },
 "basepathmapper":{
@@ -37,7 +59,24 @@
         "PerAF":"lowres_fmriPath",
         "VMHC":"lowres_fmriPath",
         "lT1":"lowres_smriPath",
-        "hT1":"highres_smriPath"
+        "hT1":"highres_smriPath",
+        "fMVP":"lowres_fmriPath"
+    },
+    "BSNIP":{
+        "tsavg":"lowres_fmriPath",
+        "tsmax":"lowres_fmriPath",
+        "tsmedian":"lowres_fmriPath",
+        "tsmin":"lowres_fmriPath",
+        "ALFF":"lowres_fmriPath",
+        "DCw":"lowres_fmriPath",
+        "DCb":"lowres_fmriPath",
+        "fALFF":"lowres_fmriPath",
+        "KccReHo":"lowres_fmriPath",
+        "PerAF":"lowres_fmriPath",
+        "VMHC":"lowres_fmriPath",
+        "lT1":"lowres_smriPath",
+        "hT1":"highres_smriPath",
+        "fMVP":"lowres_fmriPath"
     }
 },
 "maskbasepath":"/data/users2/ibatta/data/masks/",
@@ -46,6 +85,26 @@
         "lowres_fmriPath":"ADNI_T1_lowres.nii.gz",
         "lowres_smriPath":"ADNI_T1_lowres.nii.gz",
         "highres_smriPath":"ADNI_18334_mask_T1_highres.nii"
+    },
+    "BSNIP":{
+        "lowres_fmriPath":"BSNIP_allPRMask.nii.gz"
     }
+},
+"atlasmapper":{
+    "highres_smriPath":
+        {"atlas":"/data/users2/ibatta/data/atlases/ROImaskvols_T1highres/rHO-CortSubcortCB-atlas-ROImasks_MaskedBinarized.nii",
+        "cuboids":"/data/users2/ibatta/data/atlases/ROImaskvols_T1highres/rHO-CortSubcortCB-atlas-ROImasks_MaskedBinarized_cuboids.nii.gz",
+        "cuboidCorners":"/data/users2/ibatta/data/atlases/ROImaskvols_T1highres/rHO-CortSubcortCB-atlas-ROImasks_MaskedBinarized_cuboids_indices.csv"
+        },
+    "lowres_smriPath":
+        {"atlas":"/data/users2/ibatta/data/atlases/ROImaskvols_T1lowres/rlowres_HO-CortSubcortCB-atlas-ROImasks_MaskedBinarized.nii.gz",
+        "cuboids":"/data/users2/ibatta/data/atlases/ROImaskvols_T1lowres/rlowres_HO-CortSubcortCB-atlas-ROImasks_MaskedBinarized_cuboids.nii.gz",
+        "cuboidCorners":"/data/users2/ibatta/data/atlases/ROImaskvols_T1lowres/rlowres_HO-CortSubcortCB-atlas-ROImasks_MaskedBinarized_cuboids_indices.csv"
+        },
+    "lowres_fmriPath":
+        {"atlas":"/data/users2/ibatta/data/atlases/ROImaskvols_T1lowres/rlowres_HO-CortSubcortCB-atlas-ROImasks_MaskedBinarized.nii.gz",
+        "cuboids":"/data/users2/ibatta/data/atlases/ROImaskvols_T1lowres/rlowres_HO-CortSubcortCB-atlas-ROImasks_MaskedBinarized_cuboids.nii.gz",
+        "cuboidCorners":"/data/users2/ibatta/data/atlases/ROImaskvols_T1lowres/rlowres_HO-CortSubcortCB-atlas-ROImasks_MaskedBinarized_cuboids_indices.csv"
+        }        
 }
 }
