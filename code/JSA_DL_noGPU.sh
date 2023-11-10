@@ -3,16 +3,15 @@
 #SBATCH -n 1
 #SBATCH -p qTRDHM
 #SBATCH -c 4
-#SBATCH --mem-per-cpu=32g
-#SBATCH -t 1440
-#SBATCH -J BSNIP_DL
+#SBATCH --mem-per-cpu=64g
+#SBATCH -t 7200
+#SBATCH -J DL
 #SBATCH -e ../out/slogs/%x-%A-%a.err
 #SBATCH -o ../out/slogs/%x-%A-%a.out
 #SBATCH -A trends53c17
 #SBATCH --oversubscribe 
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=ibatta@gsu.edu
-#SBATCH --exclude=arctrdgn001
 
 SCR=$1
 

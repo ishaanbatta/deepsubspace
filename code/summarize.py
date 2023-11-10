@@ -17,7 +17,7 @@ import utils as ut
 mpl.rcParams['savefig.bbox'] = 'tight'
 plt.rcParams['savefig.dpi'] = 300
 plt.rcParams['axes.facecolor'] = 'white'
-
+plt.rcParams.update({'font.size': 16})
 
 
 
@@ -33,7 +33,7 @@ def load_masked_saliency_maps(config_string, masks, saltype, normalize_method=No
         
     """
 
-    basedir = '../out/results/latest/'
+    basedir = '../out/results/'
     
     nch, nx, ny, nz = masks.shape
     mr = masks.reshape([nch,nx*ny*nz])
@@ -44,7 +44,7 @@ def load_masked_saliency_maps(config_string, masks, saltype, normalize_method=No
     
     for saldir in saldirs:
         salfile = saldir + saltype+'.pkl'
-        labelfile = saldir + 'test_labels.txt'
+        labelfile = saldir + 'labels_te.txt'
         labels = np.array(np.loadtxt(labelfile), dtype=int)
         out_labels.append(labels.squeeze())
         
@@ -93,9 +93,10 @@ def save_masked_maps(data, masks, outfilepath, maskObj=None):
     
 
 
-def run_tstats(data, data2=None, alternateH='two-sided', standardize=True):
+def run_tstats(data, data2=None, alternateH='two-sided', standardize=True, fdr_alpha=0.05):
     # Assumes (nSamp, nFeatures) as the dim (2-dimensional)
-    out_stats = ['tvals','minusTlogP_uncorrected','pvals_uncorrected','pvals_fdrCorrected','fdr_rejectedHypothesis','minusTlogP_fdrCorrected', 'minusSignTlogP_fdrCorrected']
+    # out_stats = ['tvals','minusTlogP_uncorrected','pvals_uncorrected','pvals_fdrCorrected','fdr_rejectedHypothesis','minusTlogP_fdrCorrected', 'minusSignTlogP_fdrCorrected']
+    out_stats = ['fdr_rejectedHypothesis', 'minusSignTlogP_fdrCorrected']
     out_data = {key:None for key in out_stats}
     
     if standardize:
@@ -106,9 +107,9 @@ def run_tstats(data, data2=None, alternateH='two-sided', standardize=True):
         assert np.all(data.shape[1:] == data2.shape[1:])
         tvals, pvals_uncorrected = ttest_ind(data, data2, axis=0, equal_var=False)
     else:
-        tvals, pvals_uncorrected = ttest_1samp(data, 0, axis=0)#, alternative=alternateH)
+        tvals, pvals_uncorrected = ttest_1samp(data, 0, axis=0, alternative=alternateH)
     minusTlogP_uncorrected = (-tvals) * np.log10(pvals_uncorrected)    
-    fdr_rejectedHypothesis, pvals_fdrCorrected = fdr_correction(pvals_uncorrected)
+    fdr_rejectedHypothesis, pvals_fdrCorrected = fdr_correction(pvals_uncorrected, alpha=fdr_alpha)
     minusSignTlogP_fdrCorrected = -(np.sign(tvals))*np.log10(pvals_fdrCorrected)
     minusTlogP_fdrCorrected = (-tvals) * np.log10(pvals_fdrCorrected)
     for key in out_stats:
@@ -130,9 +131,9 @@ def summarize_saliency(config_string, regvar, outfile, saltype='sal_raw', mode='
         
     """
     
-    basedir = '../out/results/latest/'
+    basedir = '../out/results/'
     ## Ensure abs for clf, and not for reg
-    config_string = impute_scorename(config_string, regvar)
+    
     
     cs = config_string.split('_')
     nc = int(cs[cs.index('nc')+1])
@@ -151,30 +152,61 @@ def summarize_saliency(config_string, regvar, outfile, saltype='sal_raw', mode='
     # Load flattened data with only mask voxels
     data, labels = load_masked_saliency_maps(config_string, masks, saltype)
     
-    
-    
     # Compute stats
     tstats = []
     for ch in range(nch):
         if mode == 'single':
             tstats.append(run_tstats(data[ch], alternateH='two-sided'))
+            
         elif mode == 'groupwise':
             tstats.append(run_tstats(data[ch][labels==0,:], data2=data[ch][labels==1,:], alternateH='two-sided'))
             
+        elif mode in ['univsmul']:
+            # Assert bimodal arch and compare for both cases
+            if nch >= 2:
+                #corresponding unimodal data to ch
+                curmod = cfg.fkey.split(',')[ch]
+                config2 = config_string.replace(cfg.fkey,curmod)
+                curmasks = np.expand_dims(masks[ch],0)
+                data2, _ = load_masked_saliency_maps(config2, curmasks,saltype)
+                # Perform t-test between uni vs bi modal paradigm for modality ch
+                tstats.append(run_tstats(data[ch], data2=data2[0], alternateH='two-sided'))
+            else:
+                print('Unimodal config strings are not supported in %s mode. They will already be compared under multimodal cases. Exiting..'%mode)
+                return
+                    
+        elif mode == 'intrabim':
+            # Assert bimodal arch and save as single channel result
+            if nch == 2:
+                if ch == 0:
+                    tstats.append(run_tstats(data[0], data2=data[1], alternateH='two-sided'))                    
+                else:
+                    print('Skipping redundant iterations for %s mode.'%mode)
+                    break
+            else: 
+                print('Only bi-modal config strings are supported in %s mode. Exiting..'%mode)
+                return
+        elif mode == 'meansal':
+            tstats.append({'meansal':data[ch].mean(axis=0)})
+        elif mode == 'stdsal':
+            tstats.append({'stdsal':data[ch].std(axis=0)})
     
     # Save all results
     list_stats = tstats[0].keys()
     
     for curstat in list_stats:
     
-        cur_out_data = [tstats[ch][curstat] for ch in range(nch)]
+        nstats = nch 
+        if mode == 'intrabim':
+            nstats = 1 
+        cur_out_data = [tstats[ch][curstat] for ch in range(nstats)]
         
         head, tail = os.path.split(outfile)
         Path(head).mkdir(parents=True, exist_ok=True)
         assert ('.nii' in tail)
         cur_outfile = head + '/' + tail.replace('.nii','_%s_%s_%s.nii'%(saltype, mode, curstat))
         
-        save_masked_maps(cur_out_data, masks, cur_outfile, maskObj=mask_objects[0])
+        save_masked_maps(cur_out_data, masks[:nstats], cur_outfile, maskObj=mask_objects[0])
         
     
     
@@ -242,10 +274,10 @@ def summarize_saliency(config_string, regvar, outfile, saltype='sal_raw', mode='
     
     
 def impute_scorename(config_string, regvar):
-    cs = config_string.split('_')
+    cs = config_string.split('/')[-1].split('_')
     si = cs.index('scorename')
     imputed_config_string =  '_'.join(cs[:si+1] + [regvar] + cs[(si+2):])
-    return imputed_config_string
+    return  '/'.join(config_string.split('/')[:-1] +  [imputed_config_string] )
 
 def summarize_config(config_string, regvar, metric):
     """
@@ -258,11 +290,13 @@ def summarize_config(config_string, regvar, metric):
     basedir = '../out/results/'
     
     cmds = 'cat %s%s/test.csv | head -1'%(basedir,config_string) 
+    print(cmds)
     metrics = os.popen(cmds).read().strip('\n').split(',')
     print(metrics)
     ind = metrics.index(metric)
 
     cmd = 'cat %s%s/test.csv | grep -v acc | grep -v mae_te | cut -f%d -d\",\"'%(basedir,config_string,ind+1)
+    print(cmd)
     output_stream = os.popen(cmd)
     test_accs = np.array(output_stream.read().split('\n')[:-1], dtype=float)
     return test_accs
@@ -270,11 +304,15 @@ def summarize_config(config_string, regvar, metric):
 def summarize_all_saliencies(configlist_file, regvar, cfg_ind, rep=-1):
     # sals = ['sal','fsal','imsal','fimsal']
     # saltypes = [si+'_raw' for si in sals] + [si+'_zscore' for si in sals]
-    saltypes = ['fsal_raw']
+    saltypes = ['fsal_te']
+    # modes = ['single','groupwise','univsmul','intrabim']
+    modes = ['meansal','stdsal','single','groupwise']
+    # modes = ['single']
     with open(configlist_file,'r') as f:
         config_strings = f.read().split('\n')[:-1]
     
     cs = config_strings[cfg_ind]
+    cs = impute_scorename(cs, regvar)
     
     # for cs in config_strings:
     print(cs)
@@ -284,11 +322,10 @@ def summarize_all_saliencies(configlist_file, regvar, cfg_ind, rep=-1):
         outfile = '../out/saliency_stats/' + cs.replace('*','X') + '/repwise/tstats_%d.nii.gz'%rep
     for saltype in saltypes: 
         print(saltype)
-        summarize_saliency(cs, regvar, outfile, saltype=saltype, mode='single', rep=rep)
-        summarize_saliency(cs, regvar, outfile, saltype=saltype, mode='groupwise', rep=rep)
-        
-        
-    
+        for curmode in modes:
+            print(curmode)
+            summarize_saliency(cs, regvar, outfile, saltype=saltype, mode=curmode, rep=rep)
+
 
 def summarize_test_results(configlist_file, output_file, regvar, metric):
     """_summary_
@@ -299,7 +336,8 @@ def summarize_test_results(configlist_file, output_file, regvar, metric):
     Returns:
 
     """
-    keys = ['mt','fkey']
+    # keys = ['mt','fkey','bs','lr','sf']
+    keys = ['mt','fkey','bs','lr']
     with open(configlist_file,'r') as f:
         config_strings = f.read().split('\n')[:-1]
     
@@ -307,17 +345,38 @@ def summarize_test_results(configlist_file, output_file, regvar, metric):
     test_accs = []
     for cs in config_strings: 
         print(cs)
-        elements = cs.split('_')
-        colnames.append('-'.join([elements[elements.index(key)+1] for key in keys]))
+        elements = cs.split('/')[-1].split('_')
+        print(elements)
+        prefix = '.'
+        if len(cs.split('/')) > 1:
+            prefix = cs.split('/')[-2]
+        colstring = '-'.join([prefix] + [elements[elements.index(key)+1] for key in keys])
+        colnames.append(colstring)
         test_accs.append(summarize_config(cs, regvar, metric))
     test_accs = np.array(test_accs).T
     
     f, ax = plt.subplots()
-    ax.boxplot(test_accs, meanline=True, labels=colnames)
+    ax.boxplot(test_accs, labels=colnames, showmeans=False, widths=0.3)
+    xcoords = 1+np.array(range(test_accs.shape[1]))
+    ycoords = test_accs.mean(axis=0)
+    ax.scatter(xcoords, ycoords, c='g')
+    for i in range(test_accs.shape[1]):
+        # ax.annotate('.%d'%int(ycoords[i]*100), (xcoords[i]-0.2,1-0.03), fontsize=16, color='gray')
+        ax.annotate('%.2f'%ycoords[i], (xcoords[i]-0.5,ycoords[i]), fontsize=16, color='gray', rotation=90)
     
     # ax = sns.boxplot(data=test_accs)
+    
+    # if metric == 'acc':
+    #     ax.set_ylim([0.6,1])
+    #     colnames = [ci.split('-')[-1].replace('KccReHo','ReHo') for ci in colnames if len(ci.split(','))<=2 ] + ['all' for ci in colnames if len(ci.split(',')) > 2 ]
+    #     print(colnames)
+    #     print(test_accs.std(axis=0))
+    #     print(test_accs.mean(axis=0))
+        
+    ax.set_ylabel(metric)        
     ax.set_xticklabels(colnames, rotation=90)
     print('Saving: '+output_file)
+    f.set_size_inches(len(colnames)/4.0, 4.8)
     plt.savefig(output_file)
     plt.close(f)
 
@@ -332,10 +391,18 @@ def summarize_test_results(configlist_file, output_file, regvar, metric):
     T, P = np.array(T), np.array(P)
     
     f, ax = plt.subplots()
-    ax1 = sns.heatmap(-np.sign(T)*np.log10(P), yticklabels=colnames, xticklabels=colnames)
+    ax1 = sns.heatmap(-np.sign(T)*np.log10(P), yticklabels=colnames, xticklabels=colnames, annot=True)
     pval_file = '.'.join(output_file.split('.')[:-1]) + '_pvals.' + output_file.split('.')[-1]
     plt.savefig(pval_file)
     plt.close(f)
+
+
+
+
+
+
+
+
 
 
 
@@ -347,22 +414,29 @@ if __name__ == "__main__":
     if 'SLURM_ARRAY_TASK_ID' in os.environ:
         cfg_ind = int(os.environ['SLURM_ARRAY_TASK_ID'])
     else:
-        cfg_ind = 10
+        cfg_ind = int(sys.argv[3])
         
-    with open('../in/scores_ADNI.txt') as f:
+    with open('../in/scores_BSNIP.txt') as f:
         regvars = f.read().split('\n')[:-1]
-    clfvars = ['labels_3way']
+    clfvars = ['labelsBP']
     metrics = {
-        'reg': ['mae_te','r_te','r2_te','nrmse_te'],
+        'reg': ['mae_te','r2_te','nrmse_te','r_te'],
         'clf': ['acc','bal_acc','precision','recall','js','rocauc']
+        # 'clf': ['acc']
         }
     
     
     
     if '_reg_' in cfp.split('/')[-1]:
         # for regvar in regvars: 
-        for regvar in ['age']:
+        for regvar in regvars:
             print(regvar)
+            
+            # for rep in range(-1,10):
+            #     print('rep=%d'%rep)
+            #     summarize_all_saliencies(cfp, regvar, cfg_ind, rep=rep)
+            # sys.exit(0)
+            
             outfile_regvar = '.'.join(outfile.split('.')[:-1]) + '_' + regvar + '.' + outfile.split('.')[-1]
             for metric in metrics['reg']:
                 print(metric)
@@ -372,10 +446,12 @@ if __name__ == "__main__":
         for regvar in clfvars: 
             print(regvar)
             
-            for rep in range(-1,10):
-                print('rep=%d'%rep)
-                summarize_all_saliencies(cfp, regvar, cfg_ind, rep=rep)
-            sys.exit(0)
+            
+            # for rep in range(-1,10):
+            #     print('rep=%d'%rep)
+            #     summarize_all_saliencies(cfp, regvar, cfg_ind, rep=rep)
+            # sys.exit(0)
+            
             outfile_regvar = '.'.join(outfile.split('.')[:-1]) + '_' + regvar + '.' + outfile.split('.')[-1]
             for metric in metrics['clf']:
                 print(metric)

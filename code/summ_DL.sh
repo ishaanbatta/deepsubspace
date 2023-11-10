@@ -32,7 +32,7 @@ sleep 1s
 
 # ./monitor_GPU.sh & 
 
-python summarize.py $CL random
+python summarize.py $CL $2 $3
 
 sleep 3s
 

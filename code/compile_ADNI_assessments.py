@@ -68,9 +68,11 @@ def extract_best_date_smri(subject_id, ref_date, findfile='smwc1T1', return_date
 # ## Creates analysis_SCORE files from ADNI_merge file for a given list of structural subject_ids.
 
 # with open('/data/users2/ibatta/data/features/SFNC/ADNI/subject_ids.txt') as fsubs:
-with open('/data/users2/ibatta/data/phenotype/ADNI/m1l1t1u_MMR180d.txt') as fsubs:
+# with open('/data/users2/ibatta/data/phenotype/ADNI/m1l1t1u_MMR180d.txt') as fsubs:
+with open('/data/users2/ibatta/data/features/lowresSMRI/ADNI/SMRI_analysis_score_uniq_subjects.txt') as fsubs:
     sfnc_subject_ids = fsubs.read().split('\n')[:-1]
-sfnc_dates = np.loadtxt('/data/users2/ibatta/data/features/fmrimeasures/ADNI/dates_MMR180d.csv', dtype=np.datetime64)
+# sfnc_dates = np.loadtxt('/data/users2/ibatta/data/features/fmrimeasures/ADNI/dates_MMR180d.csv', dtype=np.datetime64)
+sfnc_dates = np.loadtxt('/data/users2/ibatta/data/features/lowresSMRI/ADNI/SMRI_analysis_score_uniq_dates.txt', dtype=np.datetime64)
 
 # with open('/data/users2/ibatta/data/features/SMRI/ADNI/subject_ids.txt') as fsubs:
     # subject_ids = fsubs.read().split('\n')[:-1]
@@ -111,17 +113,19 @@ for sindex in range(len(subject_ids)):
     smri_datediffs.append(str(smridiff))
 
     
-with open('/data/users2/ibatta/data/features/lowresSMRI/ADNI/filelist_MMR180d.txt','w') as fl:
+with open('/data/users2/ibatta/data/features/lowresSMRI/ADNI/filelist_l1t1u180d.txt','w') as fl:
     fl.write('\n'.join(raw_files_to_be_used)+'\n')
-with open('/data/users2/ibatta/data/features/lowresSMRI/ADNI/SMRI_datediffs_MMR180d.txt','w') as fl:
+with open('/data/users2/ibatta/data/features/lowresSMRI/ADNI/SMRI_datediffs_l1t1u180d.txt','w') as fl:
     fl.write('\n'.join(smri_datediffs)+'\n')
 
-np.savetxt('/data/users2/ibatta/data/features/lowresSMRI/ADNI/dates_MMR180d.csv', smri_dates, delimiter=',', fmt='%s')
-# df_final_merge.to_csv('/data/users2/ibatta/data/phenotype/ADNI/analysis_SCORE_SMRI_MMR180d.csv', index=False)
+np.savetxt('/data/users2/ibatta/data/features/lowresSMRI/ADNI/dates_l1t1u180d.csv', smri_dates, delimiter=',', fmt='%s')
+
+df_final_merge.insert(len(df_final_merge.columns),"lowres_smriPath",raw_files_to_be_used)
+df_final_merge.to_csv('/data/users2/ibatta/data/phenotype/ADNI/analysis_SCORE_SMRI_l1t1u180d.csv', index=False)
 
 
 
-# sys.exit(0)
+sys.exit(0)
 
 
 

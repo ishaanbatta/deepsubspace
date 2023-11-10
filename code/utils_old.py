@@ -1,6 +1,5 @@
 import os, json, sys
 import pickle
-import itertools
 import pdb
 import dataclasses
 import torch
@@ -14,17 +13,13 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 import numpy as np
 import pandas as pd
 import nibabel as nib
-from models import AlexNet3D_Dropout, AN3Ddr_highresMax, AN3Ddr_lowresAvg, AN3Ddr_lowresMax, AN3Ddr_lowresMaxLight, AN3Ddr_lowresMaxLight_ASL, BrASLnet, meanASLnet
+from models import AlexNet3D_Dropout, AN3Ddr_highresMax, AN3Ddr_lowresAvg, AN3Ddr_lowresMax, AN3Ddr_lowresMaxLight, AN3Ddr_lowresMaxLight_ASL, BrASLnet
 from sklearn.metrics import mean_absolute_error, explained_variance_score, mean_squared_error, r2_score
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score, jaccard_score, roc_auc_score, average_precision_score, brier_score_loss, log_loss, confusion_matrix
 from dataclasses import dataclass
 from scipy.stats import pearsonr, zscore
-from scipy.io import savemat, loadmat
 from scipy.ndimage import gaussian_filter
 from dataclasses import dataclass, field, asdict
-
-import ray 
-
 
 from ray import air, tune
 from ray.tune.schedulers import ASHAScheduler
@@ -32,9 +27,9 @@ from ray.air import session
 from ray.air.checkpoint import Checkpoint
 from ray.tune import CLIReporter
 
-sys.path.insert(-1,'../../subspace/code/')
-from learn_subspaces import compute_subspaces
 
+sys.path.insert(1,'../../subspace/code/')
+from learn_subspaces import compute_subspaces
 
 
 @dataclass
@@ -42,7 +37,6 @@ class Config:
     iter: int = 0  # slurmTaskIDMapper maps this variable using tr_smp_sizes and nReps to tss and rep
     tr_smp_sizes: tuple = (100, 200, 500, 1000, 2000, 5000, 10000)
     nReps: int = 20
-    thr: float = 0.0 # two-sided threshold for masking out voxels 
     nc: int = 10
     bs: int = 16
     lr: float = 0.001
@@ -88,7 +82,6 @@ class MRIDataset(Dataset):
         self.raytune = cfg.raytune
         self.mt = cfg.mt
         self.nbr = cfg.nbr
-        self.thr = cfg.thr
 
     def __len__(self):
         return self.df.shape[0]
@@ -103,9 +96,6 @@ class MRIDataset(Dataset):
         # if self.cr == 'reg':
         #     # print('Replacing nan..')
         #     y[np.isnan(y)] = np.mean(y[~np.isnan(y)])
-        
-        X[np.abs(X) < self.thr] = 0.0
-        
         return [X, y]
 
 
@@ -161,60 +151,17 @@ def readFrames(ssd, mode, tss, rep):
 
     return df
 
-def load_cuboid_corners(fm, ds, fkey):
-    basekey = fm['basepathmapper'][ds][fkey]
-    cuboid_corners_path = fm['atlasmapper'][basekey]["cuboidCorners"]
-    cuboid_corners = np.loadtxt(cuboid_corners_path, delimiter=',', dtype=int)
-    assert cuboid_corners.shape[1] == 6
-    return cuboid_corners
-
 def get_cuboid_shapes(fm, ds, fkey):
-    # Get shapes of enclosing cuboids for ROIs.
     fkeys = fkey.split(',')
     shapes = []
     for curkey in fkeys:
-        cuboid_corners = load_cuboid_corners(fm, ds, curkey)
+        basekey = fm['basepathmapper'][ds][curkey]
+        cuboid_corners_path = fm['atlasmapper'][basekey]["cuboidCorners"]
+        cuboid_corners = np.loadtxt(cuboid_corners_path, delimiter=',', dtype=int)
+        assert cuboid_corners.shape[1] == 6
         imin, imax = cuboid_corners[:,:3], cuboid_corners[:,3:]
         shapes.append(imax+1-imin)
     return shapes
-
-
-def reverse_cuboid_transform(indata, cuboid_corners, refshape):
-    """Flattened and concatenated enclosing cuboids are projected back onto a 3d brain map.
-
-    Args:
-        indata: Nsub x Nch x X x Y x Z  or N x C x X for flattened
-        cuboid_corners: lower index corner coordinates for cuboids with shape (Nbr X Y Z) where Nbr is number of cuboids
-        refshape: shape of the reference 3D image data to project onto.
-    """
-    nsub, nch , lx = indata.squeeze().shape
-    nbr = cuboid_corners.shape[0]
-    lower, upper = cuboid_corners[:,:3], cuboid_corners[:,3:]
-    allshapes = upper + 1 - lower
-    outdata = np.zeros(refshape)
-    for i in range(nbr):
-        curshape = allshapes[i,:]
-        imin = allshapes[0:i,:].prod(axis=1).sum()
-        imax = imin + curshape.prod() 
-        curpatch = np.reshape(indata[:,:,imin:imax], [nsub,1,curshape[0],curshape[1],curshape[2]])
-        outdata[lower[i,0]:upper[i,0], lower[i,1]:upper[i,1], lower[i,2]:upper[i,2] ] = curpatch
-
-    return outdata
-
-def patchify(images, n_patches):
-    n, c, h, w, d = images.shape
-
-    assert h == w, "Patchify method is implemented for square images only"
-
-    patches = torch.zeros(n, n_patches ** 2, h * w * c // n_patches ** 2)
-    patch_size = h // n_patches
-
-    for idx, image in enumerate(images):
-        for i in range(n_patches):
-            for j in range(n_patches):
-                patch = image[:, i * patch_size: (i + 1) * patch_size, j * patch_size: (j + 1) * patch_size]
-                patches[idx, i * n_patches + j] = patch.flatten()
-    return patches
     
 def read_X_y_5D_idx_branchedROI(df, fkey, idx, scorename, cr, fm, ds, replace_nan=True):
     fkeys = fkey.split(',')
@@ -287,6 +234,8 @@ def read_X_y_5D_idx_branchedROI(df, fkey, idx, scorename, cr, fm, ds, replace_na
         y = np.array(y)
 
     return X_all, y
+    
+
 
 
 
@@ -372,7 +321,7 @@ def train(dataloader, net, optimizer, criterion, cuda_avl):
         
         outputs, _ = net(inputs)
         # import pdb; pdb.set_trace()
-        
+            
         loss = criterion(outputs.squeeze(), labels)
         loss.backward()
         optimizer.step()
@@ -680,7 +629,7 @@ def loadData(cfg, mode, get_shapes=False):
     # import pdb; pdb.set_trace()
 
     dloader = DataLoader(dset, batch_size=cfg.bs,
-                         shuffle=True, num_workers=cfg.nw, drop_last=False, pin_memory=True, prefetch_factor=prefetch_factor, persistent_workers=True)
+                         shuffle=True, num_workers=cfg.nw, drop_last=True, pin_memory=True, prefetch_factor=prefetch_factor, persistent_workers=True)
 
     if get_shapes:
         return dloader, dset.shapes
@@ -739,7 +688,7 @@ def slurmTaskIDMapper(cfg):
     fns = list(cfg.fm['filename'][cfg.ds].keys()) # list of feature names
     # fns = ['tsavg','tsmedian','tsmax','tsmin']
     new_mods = ['tsavg','tsmedian','tsmax','tsmin'] 
-    fns_remove = ['PerAF'] #+ ['tsavg','tsmedian','tsmax','tsmin'] 
+    fns_remove = ['hT1','PerAF'] #+ ['tsavg','tsmedian','tsmax','tsmin'] 
     for fi in fns_remove:
         fns.remove(fi)
     fns.append(','.join([fi for fi in fns if fi not in new_mods])) #multimodal with all features into DL model
@@ -797,33 +746,12 @@ def initializeNet(cfg):
         feshapes = np.loadtxt('/data/users2/ibatta/projects/deepsubspace/in/feature_extractor_out_shapes.txt',delimiter=',')
         # scale_factor = 16
         net = BrASLnet(num_classes=cfg.nc, num_channels=cfg.nch, num_groups=cfg.nch, num_branches=cfg.nbr, shapes=shapes, feshapes=feshapes, sf=cfg.sf)
-    elif cfg.mt == 'BrASLnet3':
-        shapes = get_cuboid_shapes(cfg.fm, cfg.ds, cfg.fkey)
-        feshapes = np.loadtxt('/data/users2/ibatta/projects/deepsubspace/in/feature_extractor_out_shapes.txt',delimiter=',')
-        # scale_factor = 16
-        net = BrASLnet(num_classes=cfg.nc, num_channels=cfg.nch, num_groups=cfg.nch, num_branches=cfg.nbr, shapes=shapes, feshapes=feshapes, sf=cfg.sf)
-    elif cfg.mt == 'BrASLnet4':
-        shapes = get_cuboid_shapes(cfg.fm, cfg.ds, cfg.fkey)
-        feshapes = np.loadtxt('/data/users2/ibatta/projects/deepsubspace/in/feature_extractor_out_shapes.txt',delimiter=',')
-        # scale_factor = 16
-        net = BrASLnet(num_classes=cfg.nc, num_channels=cfg.nch, num_groups=cfg.nch, num_branches=cfg.nbr, shapes=shapes, feshapes=feshapes, sf=cfg.sf)
-    elif cfg.mt == 'BrASLnet5':
-        shapes = get_cuboid_shapes(cfg.fm, cfg.ds, cfg.fkey)
-        feshapes = np.loadtxt('/data/users2/ibatta/projects/deepsubspace/in/feature_extractor_out_shapes.txt',delimiter=',')
-        # scale_factor = 16
-        net = BrASLnet(num_classes=cfg.nc, num_channels=cfg.nch, num_groups=cfg.nch, num_branches=cfg.nbr, shapes=shapes, feshapes=feshapes, sf=cfg.sf, skip_clf=True)
     elif cfg.mt == 'AN3DdrlrMxLtG':
         ## Have kept ngr = nch for now, since each modality is being considered as a group.
         ## Can change it later when using sub-region instead of modalities.
         net = AN3Ddr_lowresMaxLight(num_classes=cfg.nc, num_channels=cfg.nch, num_groups=cfg.nch)
-    elif cfg.mt == 'AN3DdrhrMx':
+    elif cfg.mt == 'AN3DdrhighresMax':
         net = AN3Ddr_highresMax(num_classes=cfg.nc, num_channels=cfg.nch)
-    elif cfg.mt == 'meanASLnet':
-        shapes = get_cuboid_shapes(cfg.fm, cfg.ds, cfg.fkey)
-        feshapes = np.loadtxt('/data/users2/ibatta/projects/deepsubspace/in/feature_extractor_out_shapes.txt',delimiter=',')
-        # scale_factor = 16
-        net = meanASLnet(num_classes=cfg.nc, num_channels=cfg.nch, num_groups=cfg.nch, num_branches=cfg.nbr, shapes=shapes, feshapes=feshapes, sf=cfg.sf)
-        
     else:
         print('Check model type')
 
@@ -888,8 +816,6 @@ def tune_hyperparams(cfg, num_samples=100):
         metric_columns=['loss','training_iteration']
     )
     
-    ray.init(ignore_reinit_error=True, num_cpus=8)
-    
     # results = tune.run(
     #     lambda x: generate_validation_model(update_hyperparams_cfg(x, cfg)),
     #     resources_per_trial={"cpu": 2, "gpu": 1},
@@ -911,7 +837,7 @@ def tune_hyperparams(cfg, num_samples=100):
             num_samples=num_samples,
         ),
         param_space=search_space,
-        run_config=air.RunConfig(local_dir='/data/users2/ibatta/projects/deepsubspace/out/'+cfg.ds+'/raytune/',name=cfg.ml.split('/')[-2], log_to_file=('ray_stdout.log','ray_stderr.log'))
+        run_config=air.RunConfig(local_dir='/data/users2/ibatta/projects/deepsubspace/out/raytune/',name=cfg.ml.split('/')[-2], log_to_file=('ray_stdout.log','ray_stderr.log'))
     )
     
     results = tuner.fit()
@@ -972,7 +898,7 @@ def normalize_5D(im5D, method='zscore'):
     mim = np.zeros(im5D.shape)
     for i in range(im5D.shape[0]):
         for j in range(im5D.shape[1]):
-            mim[i,j] = normalize_image(im5D[i,j], method=method)
+            mim[i,j,:,:,:] = normalize_image(im5D[i,j,:,:,:], method=method)
     return mim
 
 
@@ -993,46 +919,19 @@ def fil_im(smap, normalize_method='zscore'):
     return fsmap
 
 
-def fil_im_5d(smap, normalize_method='minmax', fwhm=12, nrm=False, absol=False, gmr=False, zscr=False):
-    """_summary_
-
-    Args:
-        smap (5D np array): nSubs x nCh(1) x X x Y x Z
-        normalize_method (str, optional): method to use for per-subject normalizatino. Defaults to 'minmax'.
-        s (int, optional): standard deviation (sigma) for gaussial filter. Defaults to 2.
-        nrm (bool, optional): If true, data will be normalized per-subject using normalize_method. Defaults to False.
-        absol (bool, optional): if true, the input smap will be used with its absolute value. Defaults to False.
-        gmr (bool, optional): If true, global mean removal will be performed per subject. Defaults to False.
-        zscr (bool, optional): If true, data will z-scored across subjects per channel. Defaults to False.
-
-    Returns:
-        _type_: _description_
-    """
-    # smap : 
-    s=fwhm/2.355  # sigma gaussian filter
-    # 
+def fil_im_5d(smap, normalize_method='zscore'):
+    # smap : 5D: nSubs x nCh(1) x X x Y x Z
+    s = 2  # sigma gaussian filter
     w = 9  # kernal size gaussian filter
     # truncate gaussian filter at "t#" standard deviations
     t = (((w - 1)/2)-0.5)/s
-    # fsmap = np.zeros(smap.shape)
-    fsmap = smap 
-    
-    if absol: 
-        fsmap = np.abs(smap)
-    if gmr: # Global Mean Removal (per subject)
-        tempmap = (np.moveaxis(fsmap, (0,1),(-2,-1)) - fsmap.mean(axis=(2,3,4)))
-        fsmap = np.moveaxis(tempmap, (-2,-1), (0,1))
-    
-    for j in np.arange(smap.shape[1]):
-        if zscr:
-            fsmap = zscore(fsmap[:,j,:,:,:], axis=0)
-        for i in np.arange(smap.shape[0]):
-            im = fsmap[i,j,:,:,:]
-            if nrm:
-                im = normalize_image(im, method=normalize_method)
+    fsmap = np.zeros(smap.shape)
+    for i in np.arange(smap.shape[0]):
+        for j in np.arange(smap.shape[1]):
+            im = smap[i,j,:,:,:]
+            im = normalize_image(im, method=normalize_method)
             im = gaussian_filter(im, sigma=s, truncate=t)
-            if nrm:
-                im = normalize_image(im, method=normalize_method)
+            im = normalize_image(im, method=normalize_method)
             fsmap[i,j,:,:,:] = im
     return fsmap
 
@@ -1087,376 +986,106 @@ def area_occlusion(model, image_tensor, area_masks, target_class=None, occlusion
     relevance_map = relevance_map.cpu().numpy()
     relevance_map = np.maximum(relevance_map, 0)
     return relevance_map
-        
-def loadbin(binfile):
-    data = np.fromfile(binfile)
-    dshape = np.fromfile(os.path.splitext(binfile)[0] + '.shp', dtype=int)
-    data = data.reshape(dshape)
-    return data
 
-def savebin(data, binfile):
-    data.tofile(binfile)
-    np.array(data.shape).tofile(os.path.splitext(binfile)[0] + '.shp')
 
-def groupICA(cfg, md='te', varname='fsal', nc_pca = 100, nc_ica=10):
-    # Performs group ICA on all saliency maps across repetitions. 
-    # Implemented for single channel only for now..
-    
-    # Load Saliency Maps from all 
-    
-    print('Loading collective Saliency maps across reps..')
-    print('varkey: '+varname)
-    masks = loadMasks(cfg)
-    maskObj = loadMasks(cfg, nibObjectsOnly=True)
-    nch, nx, ny, nz = masks.shape
-    mr = masks.reshape([nch,nx*ny*nz])
-    nzv = (mr==1).sum() # Number of voxels in the brain mask area
-    S_all = []
-    for ri in range(cfg.nReps):
-        curml = cfg.ml.replace('rep_%d'%(cfg.rep), 'rep_%d'%ri).replace('iter_%d'%(cfg.iter), 'iter_%d'%(cfg.iter - cfg.rep + ri) )
-        fname = curml + '/filters/%s_Reshaped_%s.bin'%(varname,md)
-        S = np.fromfile(fname)
-        S_shape = np.fromfile(os.path.splitext(fname)[0] + '.shp', dtype=int) 
-        S = S.reshape(S_shape)
-        nsub, nv = S.shape
-        assert nv == nzv
-        # assert nv == nch*nx*ny*nz
-        # with open(fname, 'rb') as f:
-            # S = pickle.load(f)
-            # nsub, nv = S.shape
-            # assert nv == nch*nx*ny*nz
-            # assert ((sx==nx) and (sy==ny) and (sz==nz))    
-        # S_all.append(S.reshape([nsub, nch*nx*ny*nz])[:,mr==1])
-        # S_all.append(S[:,mr==1])
-        S_all.append(S)
-        # f.close()
-        
-        
-    
-    S_all = np.vstack(S_all)
-    
-    if not os.path.exists(cfg.ml + '/groupICA/pca_%d_ica_%d/'%(nc_pca, nc_ica)):
-        os.makedirs(cfg.ml + '/groupICA/pca_%d_ica_%d/'%(nc_pca, nc_ica))
-    
-    # Perform PCA before ICA 
-    print('Performing PCA on saliency maps..')
-    
-    W, Xn, expvar = compute_subspaces(S_all.T, procedure='standardPCA', n_components=nc_pca, return_transform=True, return_expvar=True, normalize='zscore')
-    
-    print('Saving PCA results..')
-    with open(cfg.ml+'/groupICA/pca_%d_ica_%d/'%(nc_pca, nc_ica) + '/%s_%s_groupPCAExplainedVarianceRatio.pkl'%(varname,md),'wb') as f:
-        pickle.dump(expvar,f)
-    with open(cfg.ml+'/groupICA/pca_%d_ica_%d/'%(nc_pca, nc_ica)+'/%s_%s_groupPCAEigenVectors.pkl'%(varname,md),'wb') as f:
-        pickle.dump(W,f)
-    with open(cfg.ml+'/groupICA/pca_%d_ica_%d/'%(nc_pca, nc_ica)+'/%s_%s_groupPCAloadings.pkl'%(varname,md),'wb') as f:
-        pickle.dump(Xn,f)
-
-    
-    # Perform ICA
-    print('Performing ICA on reduced PCA dimensions..')
-    ica_comp, ica_loadings = compute_subspaces(Xn, procedure='fastICA', n_components=nc_ica,return_transform=True)
-    
-    print('Saving ICA results..')
-    with open(cfg.ml+'/groupICA/pca_%d_ica_%d/'%(nc_pca, nc_ica)+'%s_%s_groupICAcomponents.pkl'%(varname,md),'wb') as f:
-        pickle.dump(ica_comp,f)
-    with open(cfg.ml+'/groupICA/pca_%d_ica_%d/'%(nc_pca, nc_ica)+'%s_%s_groupICAloadings.pkl'%(varname,md),'wb') as f:
-        pickle.dump(ica_loadings,f)
-    
-    # Back reconstruction
-    print('Performing back reconstruction..')
-    recon_components = W @ ica_comp
-    nsub, nc = recon_components.shape
-    with open(cfg.ml+'/groupICA/pca_%d_ica_%d/'%(nc_pca, nc_ica)+'%s_%s_groupICAreconComponents.pkl'%(varname,md),'wb') as f:
-        pickle.dump(recon_components,f)
-    # import pdb; pdb.set_trace()
-    curout = np.zeros([nc, nx*ny*nz])
-    for ci in range(nc):
-        curout[ci,mr[0]==1] = recon_components[:,ci]
-
-    curout =  np.moveaxis(curout.reshape([nc,nx,ny,nz]), 0, -1)
-    nii_outpath = cfg.ml+'/groupICA/pca_%d_ica_%d/'%(nc_pca, nc_ica)+'%s_%s_groupICAreconComponents.nii'%(varname,md)
-    nib.save(nib.Nifti1Image(curout, affine=maskObj[0].affine, header=maskObj[0].header ), nii_outpath)
-    print('Saved reconstructed components.')
-    
-    
-def test_filtering(cfg):
-    tf = [True,False]
-    filter_vars = ['gmr', 'absol', 'fwhm']
-    for vals in itertools.product([True],tf, [5,12,20]):
-        fil_args = dict(zip( filter_vars, vals))
-        perform_filtering(cfg, md='te', **fil_args)
-    return
-
-def perform_filtering(cfg, md='te', **fil_args):
-    
-    indata = loadbin(cfg.ml + '/rawsal_%s.bin'%md)
-    nsub, nch, nx, ny, nz = indata.shape
-    
-    masks = loadMasks(cfg)
-    mr = masks.reshape([nch*nx*ny*nz])
-    
-    # fil_args = {'nrm':False,'gmr':True,'absol':False}
-    print('Filter args: ')
-    print(fil_args)
-    
-    filkey = '_'.join([str(k) for k,v in fil_args.items() if (v and type(v)==bool) ])
-    filkey += '_'+'_'.join([ '%s%d'%(k,v) for k,v in fil_args.items() if (type(v)==int) ])
-    print(filkey)
-    
-    if not os.path.exists(cfg.ml + '/filters/'):
-        os.makedirs(cfg.ml + '/filters/')
-    sal_fname = cfg.ml + '/filters/sal_%s_Reshaped_%s.bin'%(filkey,md)
-    
-    
-    filsal = fil_im_5d(indata,**fil_args) 
-    decomp_in = filsal.reshape([nsub, nch*nx*ny*nz])[:,mr==1]
-    
-    # import pdb; pdb.set_trace()
-    
-    savebin(decomp_in, sal_fname)
-    
-    return 
-    
 
 def test_saliency(cfg):
-    for md in ['tr','va','te']:
-        
-        print('Testing saliency / intermediate feature extraction..')
-        cuda_avl = cfg.cuda_avl
-        
-        net = loadNet(cfg)
-        
-        
-        
-        if cfg.cuda_avl:
-            net.load_state_dict(torch.load(cfg.ml+'model_state_dict.pt'))
-            net.cuda()
-            net = torch.nn.DataParallel(
-                net, device_ids=range(torch.cuda.device_count()))
-            cudnn.benchmark = True
-        else:
-            net.load_state_dict(torch.load(cfg.ml+'model_state_dict.pt', map_location=torch.device('cpu')))
-
-        net.eval()
-        
-        isal, ifeat = [], [] # Intermediate layer (fusion layer) saliencies and features
-        sal , fsal, imsal, fimsal = [],[],[],[] # Input layer saliencies
-        feat = [] # Input data
-        
-        dataloader = loadData(cfg, md, get_shapes=False)
-        # Iterate over dataloader batches
-        all_labels = []
-        
-        masks = loadMasks(cfg)
-        for _, data in enumerate(dataloader, 0):
-            # print('Running new batch..')
-            inputs, labels = data
-            all_labels.append(np.squeeze(labels))
-            
-            # # Wrap in variable and load batch to gpu
-            # if cuda_avl:
-            #     inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
-            # else:
-            #     inputs, labels = Variable(inputs), Variable(labels)
-
-            # tempmask = np.ones(inputs.shape[2:])
-            
-            
-            if True:#'ASL' not in cfg.mt:
-                # Compute saliency at input layers
-                sal_out = run_saliency(cfg.ml, 'BPraw', inputs, net, masks, cfg.scorename, cfg.cr, cuda_avl=cuda_avl)
-                sal.append(sal_out[0])
-                # fsal.append(sal_out[1])
-                # imsal.append(sal_out[2])
-                # fimsal.append(sal_out[3])    
-                
-                feat.append(inputs)
-                
-                
-                
-            
-            else:
-                # Compute saliency of intermediate layers
-                isal_out = run_saliency(cfg.ml, 'BPintermediate', inputs, net, masks, cfg.scorename, cfg.cr, cuda_avl=cuda_avl)
-                
-                # Compute features at intermediate layers
-                ifeat_out = run_saliency(cfg.ml, 'featuresIntermediate', inputs, net, masks, cfg.scorename, cfg.cr, cuda_avl=cuda_avl)
-                
-                isal.append(isal_out[0])
-                ifeat.append(ifeat_out[0])
-                
-            
-            
-        all_labels = np.hstack(all_labels).squeeze()
-        np.savetxt(cfg.ml+'labels_%s.txt'%md, all_labels, fmt='%d')
-        
-        print('Saliency results will be saved to: \n'+cfg.ml)
-        
-        # Intermediate Saliency for only branched architectures
-        if False:#'ASL' in cfg.mt:
-            isal = np.vstack(isal)
-            np.savetxt(cfg.ml+'isal_%s.csv'%md, isal, delimiter=',')
-            ifeat = np.vstack(ifeat)
-            np.savetxt(cfg.ml+'ifeat_%s.csv'%md, ifeat, delimiter=',')
-            # with open(cfg.ml+'isal_zscore.pkl','wb') as f:
-            #     pickle.dump(isal,f)
-            
-            
-            
-            if md == 'tr': 
-                # In the case of training data, compute active subspaces. 
-                L, W, C = compute_subspaces(isal.T)
-                np.savetxt(cfg.ml+'isal_%s_Lambda.csv'%md,L,delimiter=',')
-                np.savetxt(cfg.ml+'isal_%s_EigenVectors.csv'%md,W,delimiter=',')
-                np.savetxt(cfg.ml+'isal_%s_Cmatrix.csv'%md,C,delimiter=',')
-                
-                W = compute_subspaces(isal.T, procedure='fastICA')
-                np.savetxt(cfg.ml+'isal_%s_fastICAEigenVectors.csv'%md,W,delimiter=',')
-                
-                W = compute_subspaces(isal.T, procedure='sparsePCA')
-                np.savetxt(cfg.ml+'isal_%s_SparseEigenVectors.csv'%md,W,delimiter=',')    
-        
-        # Input saliencies for non-branched architectures.
-        else:
-            
-            
-            sal = np.vstack(sal)
-            savebin(sal, cfg.ml + '/rawsal_%s.bin'%md)
-            
-            nsub, nch, nx, ny, nz = sal.shape
-            
-            
-            
-            # fsal = np.vstack(fsal)
-            feat = np.vstack(feat)
-            
-            
-            varnames = ['sal']#,'fsal','feat']
-            
-            
-            filter_vars = ['nrm','gmr','absol']
-            
-            
-            if nch == 1:# and md == 'tr': # Implemented for single channel only for now..
-                
-                mr = masks.reshape([nch*nx*ny*nz])
-                for i in range(len(varnames)):
-                    
-                    
-                    # decomp_in = eval(varnames[i]).reshape([nsub, nch*nx*ny*nz])[:,mr==1]
-                    
-                    if varnames[i]  in ['sal'] and md=='te':
-                        tf = [True, False]
-                        fvals = [5,12,20]
-                        
-                        if True:
-                        # for vals in itertools.product(tf,tf,tf):
-                            # fil_args = dict(zip( filter_vars, vals))
-                            fil_args = {'nrm':False,'gmr':True,'absol':False}
-                            print('Filter args: ')
-                            print(fil_args)
-                            fwhm = 12
-                            
-                            filkey = str(int(fwhm)) + ''.join([k for k,v in fil_args.items() if v])
-                            if not os.path.exists(cfg.ml + '/filters/'):
-                                os.makedirs(cfg.ml + '/filters/')
-                            sal_fname = cfg.ml + '/filters/%s_%sReshaped_%s.bin'%(varnames[i],filkey,md)
-                            # sal_fname = cfg.ml + '/%s%sReshaped_%s.bin'%(varnames[i],filkey,md)
-                            
-                            
-                            
-                            filsal = fil_im_5d(eval(varnames[i]), s=fwhm/2.355,**fil_args) 
-                            decomp_in = filsal.reshape([nsub, nch*nx*ny*nz])[:,mr==1]
-                            
-                            # import pdb; pdb.set_trace()
-                            
-                            savebin(decomp_in, sal_fname)
-                            
-                            # decomp_in.tofile(sal_fname)
-                            # np.array(decomp_in.shape).tofile(sal_fname.replace('.bin','.shp'))
-                            
-                            # savemat(, {'fsal':decomp_in})
-                            # with open(cfg.ml+'fsalReshaped_%s.pkl'%md,'wb') as f:
-                                # pickle.dump(decomp_in,f)
-            
-                    continue
-                    
-                    print('Performing PCA on saliency maps..')
-                    W, Xn = compute_subspaces(decomp_in.T, procedure='standardPCA', n_components=100, return_transform=True, normalize='zscore')
-                    
-                    # np.savetxt(cfg.ml+'%s_%s_standardPCAEigenVectors.csv'%(varnames[i],md),W,delimiter=',')    
-                    with open(cfg.ml+'%s_%s_standardPCAEigenVectors.pkl'%(varnames[i],md),'wb') as f:
-                        pickle.dump(W,f)
-                    with open(cfg.ml+'%s_%s_standardPCAloadings.pkl'%(varnames[i],md),'wb') as f:
-                        pickle.dump(Xn,f)
-                    
-                    # print('Loading pre-computed PCA maps..')
-                    # W = np.loadtxt(cfg.ml+'%s_%s_standardPCAEigenVectors.csv'%(varnames[i],md),delimiter=',')
-                    # with open(cfg.ml+'%s_%s_standardPCAloadings.pkl'%(varnames[i],md),'rb') as f:
-                    #     Xn = pickle.load(f)
-                    
-                        
-                    ica_comp, ica_loadings = compute_subspaces(Xn, procedure='fastICA', n_components=10,return_transform=True)
-                    # np.savetxt(cfg.ml+'%s_%s_ICAEigenVectors.csv'%(varnames[i],md),W,delimiter=',')
-                    with open(cfg.ml+'%s_%s_ICAcomponents.pkl'%(varnames[i],md),'wb') as f:
-                        pickle.dump(ica_comp,f)
-                    with open(cfg.ml+'%s_%s_ICAloadings.pkl'%(varnames[i],md),'wb') as f:
-                        pickle.dump(ica_loadings,f)
-                    
-                    
-                    # # Collective ICA 
-                    # if int(cfg.rep) == int(cfg.nReps)-1:
-                        
-                    
-                    
-                    # # np.savetxt(cfg.ml+'%s_%s_fastICAEigenVectors.csv'%(varnames[i],md),W,delimiter=',')
-                    # with open(cfg.ml+'%s_%s_fastICAcomponents.pkl'%(varnames[i],md),'wb') as f:
-                    #     pickle.dump(W,f)
-                    # with open(cfg.ml+'%s_%s_fastICAloadings.pkl'%(varnames[i],md),'wb') as f:
-                    #     pickle.dump(W,f)
-
-            
-            
-            
-        
-            # if md == 'te':
-            #     with open(cfg.ml+'sal_%s.pkl'%md,'wb') as f:
-            #         pickle.dump(sal,f)
-
-            #     with open(cfg.ml+'fsal_%s.pkl'%md,'wb') as f:
-            #         pickle.dump(fsal,f)
-        
+    print('Testing saliency..')
+    cuda_avl = cfg.cuda_avl
     
-        
-            # imsal = np.vstack(imsal)
-            # with open(cfg.ml+'imsal_%s.pkl%md','wb') as f:
-            #     pickle.dump(imsal,f)
+    net = loadNet(cfg)
+    
+    
+    
+    if cfg.cuda_avl:
+        net.load_state_dict(torch.load(cfg.ml+'model_state_dict.pt'))
+        net.cuda()
+        net = torch.nn.DataParallel(
+            net, device_ids=range(torch.cuda.device_count()))
+        cudnn.benchmark = True
+    else:
+        net.load_state_dict(torch.load(cfg.ml+'model_state_dict.pt', map_location=torch.device('cpu')))
 
-            # fimsal = np.vstack(fimsal)
-            # with open(cfg.ml+'fimsal_%s.pkl'%md,'wb') as f:
-            #     pickle.dump(fimsal,f)
+    net.eval()
+    
+    isal = []
+    sal , fsal, imsal, fimsal = [],[],[],[]
+    dataloader = loadData(cfg, 'te', get_shapes=False)
+    # Iterate over dataloader batches
+    test_labels = []
+    for _, data in enumerate(dataloader, 0):
+        print('Running new batch..')
+        inputs, labels = data
+        test_labels.append(np.squeeze(labels))
         
+        # # Wrap in variable and load batch to gpu
+        # if cuda_avl:
+        #     inputs, labels = Variable(inputs.cuda()), Variable(labels.cuda())
+        # else:
+        #     inputs, labels = Variable(inputs), Variable(labels)
+
+        # tempmask = np.ones(inputs.shape[2:])
+        masks = loadMasks(cfg)
+        # import pdb; pdb.set_trace()
+        sal_out = run_saliency(cfg.ml, 'BPintermediate', inputs, net, masks, cfg.scorename, cfg.cr, cuda_avl=cuda_avl)
+        
+        isal.append(sal_out[0])
+        continue
+        
+        sal.append(sal_out[0])
+        fsal.append(sal_out[1])
+        imsal.append(sal_out[2])
+        fimsal.append(sal_out[3])
+        
+    test_labels = np.hstack(test_labels).squeeze()
+    np.savetxt(cfg.ml+'test_labels.txt', test_labels, fmt='%d')
+    
+    print('Saving saliency results to: \n'+cfg.ml)
+    
+    isal = np.vstack(isal)
+    np.savetxt(cfg.ml+'isal_zscore.csv', isal, delimiter=',')
+    # with open(cfg.ml+'isal_zscore.pkl','wb') as f:
+    #     pickle.dump(isal,f)
+    
+    
+    
+
+    
+    return
+    
+    sal = np.vstack(sal)
+    with open(cfg.ml+'sal_zscore.pkl','wb') as f:
+        pickle.dump(sal,f)
+
+    fsal = np.vstack(fsal)
+    with open(cfg.ml+'fsal_zscore.pkl','wb') as f:
+        pickle.dump(fsal,f)
+
+    imsal = np.vstack(imsal)
+    with open(cfg.ml+'imsal_zscore.pkl','wb') as f:
+        pickle.dump(imsal,f)
+
+    fimsal = np.vstack(fimsal)
+    with open(cfg.ml+'fimsal_zscore.pkl','wb') as f:
+        pickle.dump(fimsal,f)
+
+    
+    
+    
 
 
 
 def run_saliency(odir, itrpm, images, net, area_masks, scorename, taskM, cuda_avl=True):
     nsubs, nch = images.shape[0], images.shape[1]
+    sal_measures = ['saliency', 'filtered_saliency', 'imtimes_saliency', 'filtered_imtimes_saliency']
+    sal_out = np.array([np.zeros(images.shape) for m in sal_measures])
     
     if itrpm == 'BPintermediate':
         sal_measures = ['intermediate_saliency']
         interpretation_method = sensitivity_raw
         sal_out = [interpretation_method(net, images, area_masks, 'intermediate_saliency', None,cuda=cuda_avl, verbose=False, taskmode=taskM)]
-    elif itrpm == 'featuresRaw':
-        sal_measures = ['featuresRaw']
-        sal_out = [images]
-    elif itrpm == 'featuresIntermediate':
-        sal_measures = ['intermediate_features']
-        interpretation_method = sensitivity_raw
-        sal_out = [interpretation_method(net, images, area_masks, 'intermediate_features', None,cuda=cuda_avl, verbose=False, taskmode=taskM)]
-    elif itrpm == 'BPraw':
-        sal_measures = ['saliency']#, 'filtered_saliency', 'imtimes_saliency', 'filtered_imtimes_saliency']
-        sal_out = np.array([np.zeros(images.shape) for m in sal_measures])
         
+    elif itrpm == 'BPraw':
         interpretation_method = sensitivity_raw
         # im = images[nSub].reshape(1,1,121,145,121)
         # im = images[nSub,chi,:,:,:].reshape(1,1,images.shape[2],images.shape[3],images.shape[4])
@@ -1465,9 +1094,6 @@ def run_saliency(odir, itrpm, images, net, area_masks, scorename, taskM, cuda_av
             sal_out[mi] = interpretation_method(net, images, area_masks, sal_measures[mi], None,cuda=cuda_avl, verbose=False, taskmode=taskM)
     
     else:
-        sal_measures = ['saliency', 'filtered_saliency', 'imtimes_saliency', 'filtered_imtimes_saliency']
-        sal_out = np.array([np.zeros(images.shape) for m in sal_measures])
-        
         for nSub in range(nsubs):
             print(nSub)
             for chi in range(nch): 
@@ -1476,8 +1102,7 @@ def run_saliency(odir, itrpm, images, net, area_masks, scorename, taskM, cuda_av
                     interpretation_method = area_occlusion
                     sal_map = interpretation_method(net, images[nSub], area_masks, occlusion_value=0, apply_softmax=False, cuda=True, verbose=False,taskmode=taskM)
                 elif itrpm == 'BPintermediate':
-                    # sal_measures = ['intermediate_saliency','intermediate_features']
-                    sal_measures = ['intermediate_features']
+                    sal_measures = ['intermediate_saliency']
                     interpretation_method = sensitivity_raw
                     
                 elif itrpm == 'BPraw':
@@ -1507,22 +1132,18 @@ def sensitivity_raw(model, im, mask,gradmode, target_class=None, cuda=True, verb
     # model: pytorch model set to eval()
     # im: 5D image - nSubs x numChannels x X x Y x Z
     # mask: group input data mask - numChannles x X x Y x Z
-    # gradmode: 'saliency', 'filtered_saliency', 'imtimes_saliency', 'filtered_imtimes_saliency', 'intermediate'
+    # gradmode: 'saliency', 'filtered_saliency', 'imtimes_saliency', 'filtered_imtimes_saliency'
  
     # sal_map: gradient [4D image: X X Y X Z X nSubs]
-    
-    
     
     if cuda:
         im = torch.Tensor(im).cuda()
     else:
         im = torch.Tensor(im)
  
- 
     im = Variable(im, requires_grad=True)
  
     # Forward Pass
-    
     output, intermediate = model(im)
     
     # Predicted labels
@@ -1551,18 +1172,18 @@ def sensitivity_raw(model, im, mask,gradmode, target_class=None, cuda=True, verb
  
     if cuda:
         one_hot_output = one_hot_output.cuda()
-
+ 
     # Backward pass
-    if 'intermediate_saliency' in gradmode: 
+    if 'intermediate' in gradmode: 
         output.backward(gradient=one_hot_output, inputs=intermediate)
         # Gradient
-        sal_map = intermediate.grad.cpu().numpy() #Remove the subject axis
-    elif 'intermediate_features' in gradmode:
-        sal_map = intermediate.cpu().detach().numpy()
+        sal_map = intermediate.grad.cpu().numpy() # Remove the subject axis
     else:
         output.backward(gradient=one_hot_output)
         # Gradient
-        sal_map = im.grad.cpu().numpy() #Remove the subject axis
+        sal_map = im.grad.cpu().numpy() # Remove the subject axis
+    
+    
  
     # Gradient
     
@@ -1573,18 +1194,17 @@ def sensitivity_raw(model, im, mask,gradmode, target_class=None, cuda=True, verb
     if not 'intermediate' in gradmode:
         if 'imtimes' in gradmode:
             sal_map = sal_map * im.cpu().detach().numpy()
-        
-        if 'filtered' in gradmode:
-            sal_map = fil_im_5d(sal_map, normalize_method='minmax', s=5.095) # sigma is for FWHM=12
-        # else:
-            # only normalize withouxt filtering
-            # sal_map = normalize_5D(sal_map, method='minmax')
             
+        if 'filtered' in gradmode:
+            sal_map = fil_im_5d(sal_map, normalize_method='zscore')
+        else:
+            # only normalize withouxt filtering
+            sal_map = normalize_5D(sal_map, method='zscore')
         
         # Mask Gradient
         # mask = np.tile(mask[None], (im.shape[0], 1, 1, 1))
-        
         sal_map *= mask
+        
         
     return sal_map
 
@@ -1636,7 +1256,7 @@ def sensitivity_analysis(model, im, mask, target_class=None, cuda=True, verbose=
             one_hot_output[i][target_class[i]] = 1
  
     if cuda:
-        one_hot_output = one_hot_output.cuda()  
+        one_hot_output = one_hot_output.cuda()
  
     # Backward pass
     output.backward(gradient=one_hot_output)

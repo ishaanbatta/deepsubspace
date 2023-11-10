@@ -1,0 +1,67 @@
+# Your system has configured 'manage_etc_hosts' as True.
+# As a result, if you wish for changes to this file to persist
+# then you will need to either
+# a.) make changes to the master file in /etc/cloud/templates/hosts.debian.tmpl
+# b.) change or remove the value of 'manage_etc_hosts' in
+#     /etc/cloud/cloud.cfg or cloud-config from user-data
+#
+127.0.1.1 arctrdhm002.rs.gsu.edu arctrdhm002
+127.0.0.1 localhost
+
+# The following lines are desirable for IPv6 capable hosts
+::1 localhost ip6-localhost ip6-loopback
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+
+[W 01:44:03.748 LabApp] Permission to listen on port 420 denied.
+[W 01:44:03.749 LabApp] Permission to listen on port 421 denied.
+[W 01:44:03.749 LabApp] Permission to listen on port 422 denied.
+[W 01:44:03.750 LabApp] Permission to listen on port 423 denied.
+[W 01:44:03.750 LabApp] Permission to listen on port 424 denied.
+[W 01:44:03.750 LabApp] Permission to listen on port 496 denied.
+[W 01:44:03.750 LabApp] Permission to listen on port 473 denied.
+[W 01:44:03.750 LabApp] Permission to listen on port 458 denied.
+[W 01:44:03.750 LabApp] Permission to listen on port 482 denied.
+[W 01:44:03.750 LabApp] Permission to listen on port 498 denied.
+[W 01:44:03.750 LabApp] Permission to listen on port 385 denied.
+[W 01:44:03.750 LabApp] Permission to listen on port 486 denied.
+[W 01:44:03.750 LabApp] Permission to listen on port 422 denied.
+[W 01:44:03.751 LabApp] Permission to listen on port 498 denied.
+[W 01:44:03.751 LabApp] Permission to listen on port 405 denied.
+[W 01:44:03.751 LabApp] Permission to listen on port 501 denied.
+[W 01:44:03.751 LabApp] Permission to listen on port 455 denied.
+[W 01:44:03.751 LabApp] Permission to listen on port 365 denied.
+[W 01:44:03.751 LabApp] Permission to listen on port 359 denied.
+[W 01:44:03.751 LabApp] Permission to listen on port 464 denied.
+[W 01:44:03.751 LabApp] Permission to listen on port 357 denied.
+[W 01:44:03.751 LabApp] Permission to listen on port 513 denied.
+[W 01:44:03.751 LabApp] Permission to listen on port 400 denied.
+[W 01:44:03.751 LabApp] Permission to listen on port 439 denied.
+[W 01:44:03.752 LabApp] Permission to listen on port 329 denied.
+[W 01:44:03.752 LabApp] Permission to listen on port 419 denied.
+[W 01:44:03.752 LabApp] Permission to listen on port 336 denied.
+[W 01:44:03.752 LabApp] Permission to listen on port 424 denied.
+[W 01:44:03.752 LabApp] Permission to listen on port 474 denied.
+[W 01:44:03.752 LabApp] Permission to listen on port 380 denied.
+[W 01:44:03.752 LabApp] Permission to listen on port 498 denied.
+[W 01:44:03.752 LabApp] Permission to listen on port 358 denied.
+[W 01:44:03.752 LabApp] Permission to listen on port 500 denied.
+[W 01:44:03.752 LabApp] Permission to listen on port 348 denied.
+[W 01:44:03.753 LabApp] Permission to listen on port 337 denied.
+[W 01:44:03.753 LabApp] Permission to listen on port 343 denied.
+[W 01:44:03.753 LabApp] Permission to listen on port 469 denied.
+[W 01:44:03.753 LabApp] Permission to listen on port 459 denied.
+[W 01:44:03.753 LabApp] Permission to listen on port 430 denied.
+[W 01:44:03.753 LabApp] Permission to listen on port 482 denied.
+[W 01:44:03.753 LabApp] Permission to listen on port 513 denied.
+[W 01:44:03.753 LabApp] Permission to listen on port 471 denied.
+[W 01:44:03.753 LabApp] Permission to listen on port 496 denied.
+[W 01:44:03.753 LabApp] Permission to listen on port 429 denied.
+[W 01:44:03.753 LabApp] Permission to listen on port 322 denied.
+[W 01:44:03.754 LabApp] Permission to listen on port 379 denied.
+[W 01:44:03.754 LabApp] Permission to listen on port 466 denied.
+[W 01:44:03.754 LabApp] Permission to listen on port 368 denied.
+[W 01:44:03.754 LabApp] Permission to listen on port 520 denied.
+[W 01:44:03.754 LabApp] Permission to listen on port 331 denied.
+[W 01:44:03.754 LabApp] Permission to listen on port 366 denied.
+[C 01:44:03.754 LabApp] ERROR: the notebook server could not be started because no available port could be found.
